@@ -13,7 +13,7 @@ type View =
   | { name: 'lesson'; id: string }
   | { name: 'glossary' }
   | { name: 'practice-setup' }
-  | { name: 'practice'; ids: string[]; mode: 'practice' | 'review' }
+  | { name: 'practice'; ids: string[]; mode: 'practice' | 'review'; resume?: boolean }
   | { name: 'exam-setup' }
   | { name: 'exam'; paper: ExamPaper; startedAt: number }
   | { name: 'analytics' }
@@ -28,13 +28,22 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, 
 export default function App() {
   const [data, setData] = useState<UserData>(() => loadUserData());
   const [view, setView] = useState<View>({ name: 'home' });
-  const saveFailedRef = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [systemDark, setSystemDark] = useState<boolean>(() => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches);
 
-  useEffect(() => { saveFailedRef.current = !saveUserData(data); }, [data]);
+  useEffect(() => { setSaveFailed(!saveUserData(data)); }, [data]);
+  // テーマ auto のときは OS のダーク/ライト切替に動的に追随する（R35）
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return;
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
   const update = (fn: (d: UserData) => UserData) => setData((d) => fn(structuredClone(d)));
 
   const theme = data.settings.theme;
-  const effectiveDark = theme === 'dark' || (theme === 'auto' && typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  const effectiveDark = theme === 'dark' || (theme === 'auto' && systemDark);
 
   const stats = useMemo(() => {
     const a = data.attempts.filter((x) => x.mode !== 'exam');
@@ -58,6 +67,11 @@ export default function App() {
       </header>
 
       <main className="main">
+        {saveFailed && (
+          <section className="panel warn-panel" role="alert">
+            <p>学習データの保存に失敗しました（ブラウザの保存容量が不足している可能性があります）。古い履歴が失われるおそれがあるため、不要なブラウザデータを整理してから学習を続けてください。</p>
+          </section>
+        )}
         {view.name === 'home' && (
           <div>
             <section className="home-grid" aria-label="主要機能">
@@ -84,6 +98,14 @@ export default function App() {
                 <p>模擬試験の途中データがあります（{examDraft.paper.setLabel}）。再読み込みによる事故防止のため、同じ問題・経過時間のまま再開できます。</p>
                 <button className="primary" onClick={() => setView({ name: 'exam', paper: examDraft.paper, startedAt: examDraft.startedAt })}>模試を再開する</button>{' '}
                 <button onClick={() => update((d) => ({ ...d, draft: null }))}>破棄する</button>
+              </section>
+            )}
+
+            {data.practiceDraft && data.practiceDraft.ids.length > 0 && (
+              <section className="panel warn-panel">
+                <p>演習の途中データがあります（{data.practiceDraft.ids.length}問中 {Object.keys(data.practiceDraft.gradedAnswers).length} 問採点済み）。</p>
+                <button className="primary" onClick={() => setView({ name: 'practice', ids: data.practiceDraft!.ids, mode: data.practiceDraft!.mode, resume: true })}>演習を再開する</button>{' '}
+                <button onClick={() => update((d) => ({ ...d, practiceDraft: null }))}>破棄する</button>
               </section>
             )}
 
@@ -114,7 +136,7 @@ export default function App() {
         {view.name === 'glossary' && <GlossaryView go={setView} />}
         {view.name === 'practice-setup' && <PracticeSetup data={data} update={update} go={setView} startReview={startReview} />}
         {view.name === 'practice' && (
-          <PracticeSession key={view.ids.join(',')} ids={view.ids} mode={view.mode} data={data} update={update} go={setView} />
+          <PracticeSession key={view.ids.join(',') + (view.resume ? ':resume' : '')} ids={view.ids} mode={view.mode} resume={!!view.resume} data={data} update={update} go={setView} />
         )}
         {view.name === 'exam-setup' && <ExamSetup go={setView} update={update} />}
         {view.name === 'exam' && <ExamSession paper={view.paper} startedAt={view.startedAt} data={data} update={update} go={setView} />}
@@ -189,8 +211,21 @@ function LessonsView({ data, go }: { data: UserData; go: (v: View) => void }) {
 
 function LessonView({ id, data, update, go }: { id: string; data: UserData; update: (fn: (d: UserData) => UserData) => void; go: (v: View) => void }) {
   const lesson: Lesson | undefined = LESSON_MAP.get(id);
-  const [stage, setStage] = useState(0);
+  const savedStage = Math.min(3, Math.max(0, Number(data.lessonStages[id] ?? 0) || 0));
+  const [stage, setStageState] = useState(savedStage);
   const [term, setTerm] = useState<string | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const setStage = (i: number) => {
+    setStageState(i);
+    update((d) => ({ ...d, lessonStages: { ...d.lessonStages, [id]: String(i) } }));
+  };
+  useEffect(() => { if (term) closeBtnRef.current?.focus(); }, [term]);
+  useEffect(() => {
+    if (!term) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTerm(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [term]);
   if (!lesson) return <p>教材が見つかりません。</p>;
   const done = data.lessonsDone.includes(lesson.id);
   const related = ALL_QUESTIONS.filter((q) => q.lessonId === lesson.id);
@@ -213,10 +248,10 @@ function LessonView({ id, data, update, go }: { id: string; data: UserData; upda
       )}
       <div className="tabs" role="tablist" aria-label="解説段階">
         {stageNames.map((n, i) => (
-          <button key={n} role="tab" aria-selected={stage === i} className={stage === i ? 'tab active' : 'tab'} onClick={() => setStage(i)}>{n}</button>
+          <button key={n} role="tab" id={`stage-tab-${i}`} aria-selected={stage === i} aria-controls={`stage-panel`} className={stage === i ? 'tab active' : 'tab'} onClick={() => setStage(i)}>{n}</button>
         ))}
       </div>
-      <section className="panel">
+      <section className="panel" role="tabpanel" id="stage-panel" aria-labelledby={`stage-tab-${stage}`}>
         <p className="prewrap">{stageTexts[stage]}</p>
         {stage === 1 && lesson.exampleJournal && (
           <div>
@@ -235,7 +270,7 @@ function LessonView({ id, data, update, go }: { id: string; data: UserData; upda
             <strong>{entry.term}</strong>
             <p>{entry.short}</p>
             <p className="muted">{entry.detail}</p>
-            <button onClick={() => setTerm(null)}>閉じる（教材に戻る）</button>
+            <button ref={closeBtnRef} onClick={() => setTerm(null)}>閉じる（教材に戻る）</button>
           </div>
         )}
         <h2>この単元の問題</h2>
@@ -257,6 +292,7 @@ export function JournalTable({ journal }: { journal: { side: 'debit' | 'credit';
   const credits = journal.filter((l) => l.side === 'credit');
   const rows = Math.max(debits.length, credits.length);
   return (
+    <div className="table-scroll">
     <table className="journal-table">
       <thead><tr><th>借方科目</th><th>借方金額</th><th>貸方科目</th><th>貸方金額</th></tr></thead>
       <tbody>
@@ -268,6 +304,7 @@ export function JournalTable({ journal }: { journal: { side: 'debit' | 'credit';
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -419,15 +456,58 @@ export function FieldsInput({ q, fields, answers, setAnswers, graded, disabled }
   );
 }
 
+/** 安全な四則演算パーサ（eval系を使わない。数値・+ - * / ・括弧・小数だけを許可） */
+export function evalExpr(src: string): number | null {
+  const s = src.replace(/\s+/g, '');
+  if (!s || !/^[0-9+\-*/.()]+$/.test(s)) return null;
+  let p = 0;
+  const pk = () => s[p] ?? '';
+  const ex = (): number | null => {
+    let v = tm();
+    if (v === null) return null;
+    while (pk() === '+' || pk() === '-') {
+      const op = s[p++]!;
+      const r = tm();
+      if (r === null) return null;
+      v = op === '+' ? v + r : v - r;
+    }
+    return v;
+  };
+  const tm = (): number | null => {
+    let v = fc();
+    if (v === null) return null;
+    while (pk() === '*' || pk() === '/') {
+      const op = s[p++]!;
+      const r = fc();
+      if (r === null) return null;
+      v = op === '*' ? v * r : v / r;
+    }
+    return v;
+  };
+  const fc = (): number | null => {
+    if (pk() === '(') {
+      p++;
+      const v = ex();
+      if (v === null || pk() !== ')') return null;
+      p++;
+      return v;
+    }
+    if (pk() === '-') { p++; const v = fc(); return v === null ? null : -v; }
+    const m = /^[0-9]*\.?[0-9]+/.exec(s.slice(p));
+    if (!m) return null;
+    p += m[0].length;
+    return Number(m[0]);
+  };
+  const v = ex();
+  return v !== null && p === s.length ? v : null;
+}
+
 function Calculator() {
   const [expr, setExpr] = useState('');
   const [result, setResult] = useState('');
   const calc = () => {
-    if (!/^[0-9+\-*/.() ]+$/.test(expr)) { setResult('計算式が不正です'); return; }
-    try {
-      const v = Function(`"use strict"; return (${expr})`)() as number;
-      setResult(Number.isFinite(v) ? v.toLocaleString('ja-JP') : '計算できません');
-    } catch { setResult('計算式が不正です'); }
+    const v = evalExpr(expr);
+    setResult(v !== null && Number.isFinite(v) ? v.toLocaleString('ja-JP') : '計算式が不正です');
   };
   return (
     <div className="calc">
@@ -438,19 +518,46 @@ function Calculator() {
   );
 }
 
-function PracticeSession({ ids, mode, data, update, go }: { ids: string[]; mode: 'practice' | 'review'; data: UserData; update: (fn: (d: UserData) => UserData) => void; go: (v: View) => void }) {
+function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[]; mode: 'practice' | 'review'; resume?: boolean; data: UserData; update: (fn: (d: UserData) => UserData) => void; go: (v: View) => void }) {
   const questions = ids.map((id) => QUESTION_MAP.get(id)).filter((q): q is Question => !!q);
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [gradedMap, setGradedMap] = useState<Record<string, ReturnType<typeof grade>>>({});
+  const draft = resume ? data.practiceDraft : null;
+  const [idx, setIdx] = useState(() => Math.min(draft?.idx ?? 0, Math.max(0, questions.length - 1)));
+  const [answers, setAnswers] = useState<Record<string, string>>(() => draft?.currentAnswers ?? {});
+  const [gradedMap, setGradedMap] = useState<Record<string, ReturnType<typeof grade>>>(() => {
+    if (!draft) return {};
+    const out: Record<string, ReturnType<typeof grade>> = {};
+    for (const [qid, ans] of Object.entries(draft.gradedAnswers)) {
+      const qq = QUESTION_MAP.get(qid);
+      if (qq) out[qid] = grade(qq, ans);
+    }
+    return out;
+  });
   const [hintLevel, setHintLevel] = useState(0);
   const [usedHint, setUsedHint] = useState(false);
   const [memo, setMemo] = useState('');
   const startedRef = useRef(Date.now());
+  const draftAnswersRef = useRef<Record<string, Record<string, string>>>(draft ? { ...draft.gradedAnswers } : {});
+  const draftHintsRef = useRef<Record<string, boolean>>(draft ? { ...draft.usedHints } : {});
   const q = questions[idx];
   const graded = q ? gradedMap[q.id] : undefined;
 
   useEffect(() => { startedRef.current = Date.now(); setAnswers({}); setHintLevel(0); setUsedHint(false); }, [idx]);
+  // 途中状態を自動保存する（R32）。全問採点済みになったら下書きは消す。
+  useEffect(() => {
+    const gradedAnswers: Record<string, Record<string, string>> = {};
+    const usedHints: Record<string, boolean> = {};
+    for (const [qid, g] of Object.entries(gradedMap)) {
+      void g;
+      gradedAnswers[qid] = draftAnswersRef.current[qid] ?? {};
+      usedHints[qid] = draftHintsRef.current[qid] ?? false;
+    }
+    const allDone = questions.length > 0 && Object.keys(gradedMap).length >= questions.length;
+    update((d) => ({
+      ...d,
+      practiceDraft: allDone ? null : { ids, mode, idx, gradedAnswers, currentAnswers: answers, usedHints, savedAt: Date.now() },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, gradedMap, answers]);
   if (!q) return <div><p>問題がありません。</p><button onClick={() => go({ name: 'home' })}>ホームへ</button></div>;
   const fields = fieldsForQuestion(q);
   const doneCount = Object.keys(gradedMap).length;
@@ -458,10 +565,12 @@ function PracticeSession({ ids, mode, data, update, go }: { ids: string[]; mode:
   const submit = () => {
     const g = grade(q, answers);
     const seconds = Math.round((Date.now() - startedRef.current) / 1000);
+    draftAnswersRef.current[q.id] = answers;
+    draftHintsRef.current[q.id] = usedHint;
     setGradedMap((m) => ({ ...m, [q.id]: g }));
     update((d) => ({
       ...d,
-      attempts: [...d.attempts, { questionId: q.id, at: Date.now(), correct: g.allCorrect, fieldCorrect: g.correctCount, fieldTotal: g.totalFields, usedHint, seconds, mode, noCalcMode: data.settings.noCalcMode, answers }],
+      attempts: [...d.attempts, { questionId: q.id, at: Date.now(), correct: g.allCorrect, fieldCorrect: g.correctCount, fieldTotal: g.totalFields, usedHint, seconds, mode, noCalcMode: data.settings.noCalcMode, answers, fieldResults: g.fieldResults }],
       recentQuestionIds: [...d.recentQuestionIds.filter((x) => x !== q.id), q.id].slice(-60),
     }));
   };
@@ -559,7 +668,7 @@ function ExamSession({ paper, startedAt, data, update, go }: { paper: ExamPaper;
     const t = setInterval(() => {
       const left = EXAM_MINUTES * 60 - Math.floor((Date.now() - startedAt) / 1000);
       setRemain(Math.max(0, left));
-      if (left <= 0 && !finishedRef.current) finish();
+      if (left <= 0 && !finishedRef.current) finish(true); // 時間切れは確認なしで自動採点する（9.2）
     }, 500);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -573,15 +682,17 @@ function ExamSession({ paper, startedAt, data, update, go }: { paper: ExamPaper;
   const item = paper.items[idx];
   if (!item && !finished) return <p>模試データがありません。</p>;
 
-  function finish(confirmed = false) {
+  function finish(auto = false) {
     if (finishedRef.current) return;
-    if (!confirmed && !window.confirm('模擬試験を終了して採点しますか？終了後は解答を変更できません。')) return;
+    if (!auto && !window.confirm('模擬試験を終了して採点しますか？終了後は解答を変更できません。')) return;
     finishedRef.current = true;
     const result = gradeExam(paper, answersByQid);
     setFinished(result);
+    const elapsed = Math.min(EXAM_MINUTES * 60, Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     const rec: ExamRecord = {
       at: Date.now(), kind: paper.kind, setLabel: paper.setLabel, total: result.total,
       bySection: result.bySection, questionIds: paper.items.map((i) => i.question.id),
+      seconds: elapsed,
     };
     update((d) => ({
       ...d, draft: null, exams: [...d.exams, rec],
@@ -635,8 +746,8 @@ function ExamSession({ paper, startedAt, data, update, go }: { paper: ExamPaper;
   return (
     <div>
       <div className="session-head">
-        <span>{paper.setLabel}｜残り時間 {mmss(remain)}｜{idx + 1} / {paper.items.length}</span>
-        <button onClick={() => finish()}>試験を終了して採点</button>
+        <span>{paper.setLabel}｜残り時間 <span role="timer" aria-label={`残り時間 ${Math.floor(remain / 60)}分${remain % 60}秒`}>{mmss(remain)}</span>｜{idx + 1} / {paper.items.length}</span>
+        <button onClick={() => finish(false)}>試験を終了して採点</button>
       </div>
       <div className="exam-nav" role="navigation" aria-label="大問移動">
         {(['q1', 'q2', 'q3'] as Section[]).map((s) => {
@@ -679,7 +790,7 @@ function AnalyticsView({ data, go, startReview }: { data: UserData; go: (v: View
       <section className="panel">
         <h2>模擬試験の推移</h2>
         {data.exams.length === 0 ? <p className="muted">まだ模擬試験の記録がありません。</p> : (
-          <ul>{data.exams.map((e, i) => <li key={i}>{new Date(e.at).toLocaleString('ja-JP')}｜{e.setLabel}｜<strong>{e.total}点</strong>（第1問 {e.bySection.q1.got}・第2問 {e.bySection.q2.got}・第3問 {e.bySection.q3.got}）目標{TARGET_LINE}点まで {Math.max(0, TARGET_LINE - e.total)} 点</li>)}</ul>
+          <ul>{data.exams.map((e, i) => <li key={i}>{new Date(e.at).toLocaleString('ja-JP')}｜{e.setLabel}｜<strong>{e.total}点</strong>（第1問 {e.bySection.q1.got}・第2問 {e.bySection.q2.got}・第3問 {e.bySection.q3.got}）目標{TARGET_LINE}点まで {Math.max(0, TARGET_LINE - e.total)} 点{e.seconds !== undefined ? `｜所要 ${Math.floor(e.seconds / 60)}分${e.seconds % 60}秒` : ''}</li>)}</ul>
         )}
       </section>
       <section className="panel">
@@ -688,7 +799,7 @@ function AnalyticsView({ data, go, startReview }: { data: UserData; go: (v: View
           <table className="stats-table"><thead><tr><th>単元</th><th>解答数</th><th>正答率</th><th>習熟度</th></tr></thead>
             <tbody>{tstats.map((t) => <tr key={t.topic}><td>{t.syllabus}</td><td className="num">{t.attempts}</td><td className="num">{Math.round(t.rate * 100)}%</td><td className="num">{t.mastery}</td></tr>)}</tbody></table>
         )}
-        <p className="muted">習熟度＝全期間の正答率×50％＋直近10件の正答率×50％で計算しています（合格予測ではありません）。</p>
+        <p className="muted">習熟度＝全期間の換算正答率×50％＋直近10件の換算正答率×50％で計算しています（合格予測ではありません）。ヒントを使って正解した解答は自力正解と区別し、換算正答率では0.5件として数えます。</p>
       </section>
       <section className="panel">
         <h2>難易度別・形式別</h2>
@@ -698,12 +809,22 @@ function AnalyticsView({ data, go, startReview }: { data: UserData; go: (v: View
         <button onClick={startReview}>復習を開始する</button>{' '}
         <button onClick={() => go({ name: 'practice-setup' })}>演習を設定する</button>
       </section>
-      {data.settings.examDate && (
-        <section className="panel">
-          <h2>学習計画</h2>
-          <p>受験予定日：{data.settings.examDate}（あと {Math.max(0, Math.ceil((new Date(data.settings.examDate).getTime() - Date.now()) / 86400000))} 日）｜1日の目標：{data.settings.dailyGoalMinutes} 分</p>
-        </section>
-      )}
+      <section className="panel">
+        <h2>学習計画</h2>
+        {(() => {
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+          const todaySec = data.attempts.filter((a) => a.at >= startOfToday.getTime()).reduce((s, a) => s + a.seconds, 0)
+            + data.exams.filter((e) => e.at >= startOfToday.getTime()).reduce((s, e) => s + (e.seconds ?? 0), 0);
+          const todayMin = Math.floor(todaySec / 60);
+          return (
+            <p>
+              {data.settings.examDate ? <>受験予定日：{data.settings.examDate}（あと {Math.max(0, Math.ceil((new Date(data.settings.examDate).getTime() - Date.now()) / 86400000))} 日）｜</> : null}
+              1日の目標：{data.settings.dailyGoalMinutes} 分｜本日の学習時間：{todayMin} 分（目標まで {Math.max(0, data.settings.dailyGoalMinutes - todayMin)} 分）
+            </p>
+          );
+        })()}
+      </section>
     </div>
   );
 }

@@ -1,11 +1,12 @@
 :root {
   --bg: #f6f8fa; --panel: #ffffff; --text: #1a2332; --muted: #5b6b80; --line: #d5dde6;
   --primary: #1f5fa6; --primary-text: #ffffff; --ok: #137333; --ng: #b3261e; --chip: #e8eef5;
-  --focus: #ff8f00;
+  --focus: #b35400;
 }
 .app[data-theme='dark'] {
   --bg: #12161d; --panel: #1c232e; --text: #e8edf3; --muted: #9fb0c3; --line: #39465a;
   --primary: #4d8fce; --primary-text: #0c1420; --ok: #6fce8b; --ng: #ff9d97; --chip: #2a3646;
+  --focus: #ffb74d;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
@@ -26,7 +27,8 @@ button.primary { background: var(--primary); color: var(--primary-text); border-
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
   outline: 3px solid var(--focus); outline-offset: 2px;
 }
-.linklike { background: none; border: none; color: var(--primary); text-decoration: underline; padding: 0.1rem 0.2rem; min-height: 0; }
+.linklike { background: none; border: none; color: var(--primary); text-decoration: underline; padding: 0.3rem 0.35rem; min-height: 2rem; display: inline-flex; align-items: center; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .main { max-width: 62rem; margin: 0 auto; padding: 0.9rem; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
 h1 { font-size: 1.4rem; margin: 0.4rem 0 0.8rem; }
 h2 { font-size: 1.1rem; margin: 0.2rem 0 0.6rem; }

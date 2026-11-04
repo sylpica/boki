@@ -34,6 +34,25 @@ export interface GradeResult {
   maxPoints: number;
 }
 
+/**
+ * 公式の解答規則：同一設問で同じ勘定科目を借方内・貸方内でそれぞれ2回以上使った場合、
+ * その科目欄は不正解になる。該当する科目欄のキーを返す（演習・模試で共通利用）。
+ */
+export function duplicateInvalidatedKeys(fields: AnswerField[], answers: Record<string, string>): Set<string> {
+  const seenBySide = new Map<string, string[]>();
+  for (const f of fields) {
+    if (f.kind !== 'account') continue;
+    const side = f.key.startsWith('d') ? 'debit' : 'credit';
+    const v = (answers[f.key] ?? '').trim();
+    if (!v) continue;
+    const k = `${side}:${v}`;
+    seenBySide.set(k, [...(seenBySide.get(k) ?? []), f.key]);
+  }
+  const out = new Set<string>();
+  for (const keys of seenBySide.values()) if (keys.length > 1) for (const k of keys) out.add(k);
+  return out;
+}
+
 export function grade(q: Question, answers: Record<string, string>): GradeResult {
   const fields = fieldsForQuestion(q);
   const fieldResults: Record<string, boolean> = {};
@@ -53,24 +72,10 @@ export function grade(q: Question, answers: Record<string, string>): GradeResult
     fieldResults[f.key] = ok;
     if (ok) { correctCount++; earned += f.points; }
   }
-  // 仕訳問題は科目の借方・貸方内での重複使用を公式ルールとして不正解条件に含める:
-  // 同一科目を同じ側で2回選んだ場合は、その科目欄を不正解として再計算する。
+  // 仕訳問題は科目の借方・貸方内での重複使用を公式ルールとして不正解条件に含める
   if (q.journal) {
-    const accountFields = fields.filter((f) => f.kind === 'account');
-    const seenBySide = new Map<string, string[]>();
-    for (const f of accountFields) {
-      const side = f.key.startsWith('d') ? 'debit' : 'credit';
-      const v = (answers[f.key] ?? '').trim();
-      if (!v) continue;
-      const k = `${side}:${v}`;
-      seenBySide.set(k, [...(seenBySide.get(k) ?? []), f.key]);
-    }
-    for (const keys of seenBySide.values()) {
-      if (keys.length > 1) {
-        for (const k of keys) {
-          if (fieldResults[k]) { fieldResults[k] = false; correctCount--; earned -= fields.find((f) => f.key === k)!.points; }
-        }
-      }
+    for (const k of duplicateInvalidatedKeys(fields, answers)) {
+      if (fieldResults[k]) { fieldResults[k] = false; correctCount--; earned -= fields.find((f) => f.key === k)!.points; }
     }
   }
   return {

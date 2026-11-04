@@ -155,9 +155,13 @@ for (const [annual, monthsUsed, kind] of [
   const b = { parent: 'base-accrual-deferral', topic: '3-3', syllabus: '第三・3 決算整理', lessonId: 'L14', terms: ['繰延べ', '見越し'] };
   const common = { needsCalc: true, calcType: '期間按分', calcComplexity: 2 as const, difficulty: 'advanced' as const };
   if (kind === 'rent-prepaid') {
+    // 3月31日時点で未経過 remaining か月になるのは、支払日が「翌期の開始月」である場合。
+    // 例: 未経過3か月 → 期間は7月〜翌6月 → 毎年7月1日に前払い。
+    const endMonth = 3 + remaining;
+    const startMonth = endMonth - 11 <= 0 ? endMonth - 11 + 12 : endMonth - 11;
     out.push(mkq(b, {
       section: 'q3', format: 'closing-journal', topic: b.topic, syllabus: b.syllabus, ...common,
-      prompt: `家賃は毎年4月1日に1年分 ${yen(annual)} を前払いし、支払家賃で処理している。決算日は3月31日である。決算整理仕訳を示しなさい。`,
+      prompt: `家賃は毎年${startMonth}月1日に1年分 ${yen(annual)} を前払いし、支払家賃で処理している。決算日は3月31日である。決算整理仕訳を示しなさい。`,
       journal: [D('前払家賃', amount), C('支払家賃', amount)],
       explanation: '決算日時点で未経過の月数分は当期の費用ではないため、前払家賃（資産）へ振り替える。',
       calcProcess: `${annual.toLocaleString()} × ${remaining}/12 = ${amount.toLocaleString()}（未経過 ${remaining} か月分）`,

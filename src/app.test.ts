@@ -204,3 +204,95 @@ describe('教材と辞典', () => {
     }
   });
 });
+
+describe('監査回帰（2026-11-04 品質監査の指摘対応）', () => {
+  it('計算不要の仕訳問題は、問題文に正答金額が明示されている（解答不能問題の再発防止）', () => {
+    for (const q of ALL_QUESTIONS) {
+      if (!q.journal || q.needsCalc) continue;
+      const text = q.prompt.replace(/[,，￥¥\s]/g, '');
+      for (const line of q.journal) {
+        expect(text.includes(String(line.amount)), `${q.id}: 金額 ${line.amount} が問題文にない`).toBe(true);
+      }
+    }
+  });
+  it('貸付金の回収問題で売上を正答にしていない', () => {
+    for (const q of ALL_QUESTIONS) {
+      if (!q.journal || !q.prompt.includes('貸付金')) continue;
+      if (!q.prompt.includes('回収')) continue;
+      const credits = q.journal.filter((l) => l.side === 'credit').map((l) => l.account);
+      expect(credits, q.id).not.toContain('売上');
+    }
+  });
+  it('前払家賃の決算整理は、問題文の支払月から導ける未経過月数と正答が一致する', () => {
+    const targets = ALL_QUESTIONS.filter((q) => q.id.includes('accrual-deferral') && q.prompt.includes('前払い'));
+    expect(targets.length).toBeGreaterThan(0);
+    for (const q of targets) {
+      const m = /毎年(\d+)月1日に1年分/.exec(q.prompt);
+      if (!m) continue; // 支払月が明記されていない形式（月数が直接書かれている等）は対象外
+      const startMonth = Number(m[1]);
+      // 支払月から始まる12か月のうち、3月31日時点で未経過な月数（4月開始→0、7月開始→3、10月開始→6）
+      const remaining = (startMonth + 8) % 12;
+      const annual = Number((/￥([\d,]+)/.exec(q.prompt)?.[1] ?? '0').replace(/,/g, ''));
+      const expected = Math.round(annual * remaining / 12);
+      const debit = q.journal?.find((l) => l.account === '前払家賃');
+      expect(debit?.amount, `${q.id}: 未経過${remaining}か月のはず`).toBe(expected);
+    }
+  });
+  it('商品有高帳の問題に存在しない日付が含まれていない', () => {
+    for (const q of ALL_QUESTIONS) {
+      for (const m of q.prompt.matchAll(/(\d{1,2}) 月 (\d{1,2}) 日/g)) {
+        const month = Number(m[1]);
+        const day = Number(m[2]);
+        const maxDay = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 31;
+        expect(day, `${q.id}: ${month}月${day}日`).toBeLessThanOrEqual(maxDay);
+      }
+    }
+  });
+  it('模試採点でも同一科目の同側重複使用は不正解になる（演習採点と同一ルール）', () => {
+    const paper = buildExam(ALL_QUESTIONS, 'fixed', 1, 42);
+    const item = paper.items.find((i) => i.question.journal && i.fields.filter((f) => f.kind === 'account' && f.key.startsWith('d')).length >= 2);
+    expect(item, '重複テストに使える仕訳問題があること').toBeTruthy();
+    const answers: Record<string, string> = {};
+    const fields = item!.fields;
+    for (const f of fields) answers[f.key] = String(f.answer);
+    const dAcc = fields.filter((f) => f.kind === 'account' && f.key.startsWith('d'));
+    answers[dAcc[1]!.key] = answers[dAcc[0]!.key]!; // 借方で同じ科目を2回使う
+    const result = gradeExam(paper, { [item!.question.id]: answers });
+    const fr = result.perQuestion[item!.question.id]!.fieldResults;
+    expect(fr[dAcc[0]!.key]).toBe(false);
+    expect(fr[dAcc[1]!.key]).toBe(false);
+  });
+  it('壊れた形状の保存データでも例外なくサニタイズされる', () => {
+    const corrupt = {
+      attempts: [null, 42, {}, { questionId: 'q1', at: 1, correct: true, fieldCorrect: 2, fieldTotal: 2, answers: { a: '1' } }],
+      exams: [null, { total: 80, at: 5 }],
+      bookmarks: ['x', 9, null],
+      settings: { theme: 'neon', fontScale: 'abc', dailyGoalMinutes: -3 },
+      draft: { kind: 'exam', payload: null },
+      lessonStages: { L01: 2, L02: 'x' },
+      practiceDraft: { ids: 'bad' },
+    };
+    const d = migrate(corrupt);
+    expect(d.attempts.length).toBe(1);
+    expect(d.attempts[0]!.questionId).toBe('q1');
+    expect(d.exams.length).toBe(1);
+    expect(d.bookmarks).toEqual(['x']);
+    expect(d.settings.theme).toBe('auto');
+    expect(d.settings.fontScale).toBe(1);
+    expect(d.draft).toBeNull();
+    expect(d.practiceDraft).toBeNull();
+    // サニタイズ済みデータで分析が例外を投げない
+    expect(() => topicStats(d.attempts, new Map())).not.toThrow();
+    expect(() => reviewQueue(d.attempts, ['q1'])).not.toThrow();
+  });
+  it('ヒント使用後の正解は習熟度で0.5換算される', () => {
+    const q = ALL_QUESTIONS[0]!;
+    const map = new Map([[q.id, q]]);
+    const mk = (usedHint: boolean) => ({ questionId: q.id, at: 1, correct: true, fieldCorrect: 1, fieldTotal: 1, usedHint, seconds: 1, mode: 'practice' as const, noCalcMode: false, answers: {} });
+    const withHint = topicStats([mk(true)], map);
+    const without = topicStats([mk(false)], map);
+    expect(withHint[0]!.mastery).toBe(50);
+    expect(without[0]!.mastery).toBe(100);
+    expect(withHint[0]!.hintCorrect).toBe(1);
+  });
+});

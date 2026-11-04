@@ -8,7 +8,12 @@ export interface TopicStat {
   rate: number;
   /** 習熟度（説明可能な定義）: 直近の成績を重み付けした正答率。根拠のない合格予測は出さない。 */
   mastery: number;
+  /** ヒントを使って正解した回数（自力正解とは区別して集計する） */
+  hintCorrect: number;
 }
+
+/** 1回の解答の得点換算。ヒント使用後の正解は自力正解と区別し 0.5 として数える（R28）。 */
+const scoreOf = (a: AttemptRecord): number => (a.correct ? (a.usedHint ? 0.5 : 1) : 0);
 
 export function topicStats(attempts: AttemptRecord[], questions: Map<string, Question>): TopicStat[] {
   const byTopic = new Map<string, { syllabus: string; list: AttemptRecord[] }>();
@@ -23,10 +28,11 @@ export function topicStats(attempts: AttemptRecord[], questions: Map<string, Que
   return [...byTopic.entries()].map(([topic, e]) => {
     const sorted = [...e.list].sort((x, y) => x.at - y.at);
     const correct = sorted.filter((a) => a.correct).length;
-    // 習熟度 = 全期間正答率×0.5 + 直近10件の正答率×0.5（単調で説明可能な加重）
+    const hintCorrect = sorted.filter((a) => a.correct && a.usedHint).length;
+    // 習熟度 = 全期間の換算正答率×0.5 + 直近10件の換算正答率×0.5（ヒント使用正解は0.5換算）
     const recent = sorted.slice(-10);
-    const recentRate = recent.length ? recent.filter((a) => a.correct).length / recent.length : 0;
-    const allRate = sorted.length ? correct / sorted.length : 0;
+    const recentRate = recent.length ? recent.reduce((s, a) => s + scoreOf(a), 0) / recent.length : 0;
+    const allRate = sorted.length ? sorted.reduce((s, a) => s + scoreOf(a), 0) / sorted.length : 0;
     return {
       topic,
       syllabus: e.syllabus,
@@ -34,6 +40,7 @@ export function topicStats(attempts: AttemptRecord[], questions: Map<string, Que
       correct,
       rate: allRate,
       mastery: Math.round((allRate * 0.5 + recentRate * 0.5) * 100),
+      hintCorrect,
     };
   }).sort((a, b) => a.mastery - b.mastery);
 }

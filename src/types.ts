@@ -108,6 +108,8 @@ export interface AttemptRecord {
   mode: 'practice' | 'review' | 'exam';
   noCalcMode: boolean;
   answers: Record<string, string>;
+  /** 欄単位の正誤（監査対応で追加。旧データには存在しない場合がある） */
+  fieldResults?: Record<string, boolean>;
 }
 
 export interface ExamRecord {
@@ -117,6 +119,20 @@ export interface ExamRecord {
   total: number;
   bySection: Record<Section, { got: number; max: number }>;
   questionIds: string[];
+  /** 解答に要した秒数（監査対応で追加。旧データには存在しない場合がある） */
+  seconds?: number;
+}
+
+export interface PracticeDraft {
+  ids: string[];
+  mode: 'practice' | 'review';
+  idx: number;
+  /** 採点済み問題の解答（再開時に再採点して復元する） */
+  gradedAnswers: Record<string, Record<string, string>>;
+  /** 現在の問題への未採点の入力 */
+  currentAnswers: Record<string, string>;
+  usedHints: Record<string, boolean>;
+  savedAt: number;
 }
 
 export interface UserData {
@@ -134,4 +150,8 @@ export interface UserData {
     noCalcMode: boolean;
   };
   draft?: { kind: string; payload: unknown; savedAt: number } | null;
+  /** 教材の閲覧段階（タブ位置）の保存 */
+  lessonStages: Record<string, string>;
+  /** 通常演習・復習の途中状態 */
+  practiceDraft?: PracticeDraft | null;
 }

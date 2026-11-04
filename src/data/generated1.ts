@@ -69,7 +69,7 @@ for (const [amt, kind] of [
   [230000, '商品を現金で販売した'], [68000, '手数料を現金で受け取った'], [154000, '売掛金を現金で回収した'],
   [92000, '商品を現金で販売した'], [310000, '貸付金の元本を現金で回収した'],
 ] as [number, string][]) {
-  const isLoan = kind.includes('元本');
+  const isLoan = kind.includes('貸付金');
   push(mk({
     parent: 'base-cash-receipt', topic: '2-1', syllabus: '第二・1 現金預金', difficulty: 'basic', needsCalc: false,
     prompt: `${kind}。金額は ${yen(amt)} である。仕訳を示しなさい。`,
@@ -86,7 +86,7 @@ for (const [amt, item, acct] of [
 ] as [number, string, string][]) {
   push(mk({
     parent: 'base-cash-payment', topic: '2-18', syllabus: '第二・18 収益と費用', difficulty: 'basic', needsCalc: false,
-    prompt: `${item}。仕訳を示しなさい。`,
+    prompt: `${item}。金額は ${yen(amt)} である。仕訳を示しなさい。`,
     journal: [D(acct, amt), C('現金', amt)],
     explanation: '費用が発生し、現金が減るので貸方に現金を記録する。',
     hints: ['何が減ったかを考える', '現金の減少は貸方', '支払いの内容が費用科目になる'],

@@ -119,7 +119,7 @@ function simMA(openQty: number, openUnit: number, events: InvEvent[]) {
     const month = 4 + (k % 3);
     F(b, {
       section: 'q2', format: 'ledger', difficulty: 'standard', calcType: '先入先出法による売上原価の算定', calcComplexity: 2,
-      prompt: `商品有高帳（先入先出法）について答えなさい。期首繰越は ${oq} 個（単価 ${yen(ou)}）、当月の受入は ${month} 月 ${3 + k} 日の仕入 ${rq} 個（単価 ${yen(ru)}）のみであり、当月の払出は ${month} 月 ${12 + k} 日の売上 ${pq} 個のみであった。売上原価、期末在庫数量および期末在庫金額を求めなさい。`,
+      prompt: `商品有高帳（先入先出法）について答えなさい。期首繰越は ${oq} 個（単価 ${yen(ou)}）、当月の受入は ${month} 月 ${3 + Math.floor(k / 3)} 日の仕入 ${rq} 個（単価 ${yen(ru)}）のみであり、当月の払出は ${month} 月 ${12 + Math.floor(k / 3)} 日の売上 ${pq} 個のみであった。売上原価、期末在庫数量および期末在庫金額を求めなさい。`,
       fields: [
         { key: 'cogs', label: '売上原価', kind: 'amount', answer: r.cogsTotal, points: 2 },
         { key: 'qty', label: '期末在庫数量（個）', kind: 'amount', answer: r.endQty, points: 2 },
@@ -152,7 +152,7 @@ function simMA(openQty: number, openUnit: number, events: InvEvent[]) {
     const month = 5 + (k % 3);
     F(b, {
       section: 'q2', format: 'ledger', difficulty: 'advanced', calcType: '先入先出法による売上原価の算定', calcComplexity: 3,
-      prompt: `商品有高帳（先入先出法）について答えなさい。期首繰越は ${oq} 個（単価 ${yen(ou)}）である。当月の受入・払出は、${month} 月 ${2 + k} 日に仕入 ${r1q} 個（単価 ${yen(r1u)}）、${month} 月 ${9 + k} 日に売上 ${p1} 個、${month} 月 ${16 + k} 日に仕入 ${r2q} 個（単価 ${yen(r2u)}）、${month} 月 ${23 + k} 日に売上 ${p2} 個であった。第1回払出の売上原価、売上原価の合計、期末在庫数量および期末在庫金額を求めなさい。`,
+      prompt: `商品有高帳（先入先出法）について答えなさい。期首繰越は ${oq} 個（単価 ${yen(ou)}）である。当月の受入・払出は、${month} 月 ${2 + Math.floor(k / 3)} 日に仕入 ${r1q} 個（単価 ${yen(r1u)}）、${month} 月 ${9 + Math.floor(k / 3)} 日に売上 ${p1} 個、${month} 月 ${16 + Math.floor(k / 3)} 日に仕入 ${r2q} 個（単価 ${yen(r2u)}）、${month} 月 ${23 + Math.floor(k / 3)} 日に売上 ${p2} 個であった。第1回払出の売上原価、売上原価の合計、期末在庫数量および期末在庫金額を求めなさい。`,
       fields: [
         { key: 'cogs1', label: '第1回払出の売上原価', kind: 'amount', answer: r.payouts[0]!, points: 2 },
         { key: 'cogs', label: '売上原価の合計', kind: 'amount', answer: r.cogsTotal, points: 2 },
@@ -177,7 +177,7 @@ function simMA(openQty: number, openUnit: number, events: InvEvent[]) {
     const month = 4 + (k % 4);
     F(b, {
       section: 'q2', format: 'ledger', difficulty: 'standard', calcType: '移動平均法による売上原価の算定', calcComplexity: 2,
-      prompt: `商品有高帳（移動平均法）について答えなさい。期首繰越は ${q} 個（単価 ${yen(ou)}）、当月の受入は ${month} 月 ${4 + k} 日の仕入 ${q} 個（単価 ${yen(ru)}）のみであり、当月の払出は ${month} 月 ${15 + k} 日の売上 ${pq} 個のみであった。払出単価、売上原価、期末在庫数量および期末在庫金額を求めなさい。`,
+      prompt: `商品有高帳（移動平均法）について答えなさい。期首繰越は ${q} 個（単価 ${yen(ou)}）、当月の受入は ${month} 月 ${4 + Math.floor(k / 3)} 日の仕入 ${q} 個（単価 ${yen(ru)}）のみであり、当月の払出は ${month} 月 ${15 + Math.floor(k / 3)} 日の売上 ${pq} 個のみであった。払出単価、売上原価、期末在庫数量および期末在庫金額を求めなさい。`,
       fields: [
         { key: 'unit', label: '払出単価', kind: 'amount', answer: r.payouts[0]!.unit, points: 2 },
         { key: 'cogs', label: '売上原価', kind: 'amount', answer: r.cogsTotal, points: 2 },
@@ -207,7 +207,7 @@ function simMA(openQty: number, openUnit: number, events: InvEvent[]) {
     const month = 6 + (k % 3);
     F(b, {
       section: 'q2', format: 'ledger', difficulty: 'advanced', calcType: '移動平均法による売上原価の算定', calcComplexity: 3,
-      prompt: `商品有高帳（移動平均法）について答えなさい。期首繰越は ${q} 個（単価 ${yen(ou)}）である。当月の受入・払出は、${month} 月 ${3 + k} 日に仕入 ${q} 個（単価 ${yen(r1u)}）、${month} 月 ${10 + k} 日に売上 ${p1} 個、${month} 月 ${17 + k} 日に仕入 ${q} 個（単価 ${yen(r2u)}）、${month} 月 ${24 + k} 日に売上 ${p2} 個であった。第2回払出の払出単価、売上原価の合計、期末在庫数量および期末在庫金額を求めなさい。`,
+      prompt: `商品有高帳（移動平均法）について答えなさい。期首繰越は ${q} 個（単価 ${yen(ou)}）である。当月の受入・払出は、${month} 月 ${3 + Math.floor(k / 3)} 日に仕入 ${q} 個（単価 ${yen(r1u)}）、${month} 月 ${10 + Math.floor(k / 3)} 日に売上 ${p1} 個、${month} 月 ${17 + Math.floor(k / 3)} 日に仕入 ${q} 個（単価 ${yen(r2u)}）、${month} 月 ${24 + Math.floor(k / 3)} 日に売上 ${p2} 個であった。第2回払出の払出単価、売上原価の合計、期末在庫数量および期末在庫金額を求めなさい。`,
       fields: [
         { key: 'unit2', label: '第2回払出の払出単価', kind: 'amount', answer: r.payouts[1]!.unit, points: 2 },
         { key: 'cogs', label: '売上原価の合計', kind: 'amount', answer: r.cogsTotal, points: 2 },

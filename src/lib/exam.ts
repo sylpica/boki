@@ -1,5 +1,5 @@
 import type { AnswerField, Question, Section } from '../types';
-import { fieldsForQuestion } from './fields';
+import { fieldsForQuestion, duplicateInvalidatedKeys } from './fields';
 import { mulberry32, shuffle } from './shuffle';
 
 // 2027年度以降の公式配点（日本商工会議所 2026-09-25公表）: 第1問45点・第2問25点・第3問30点、合計100点、60分、合格基準70点。
@@ -111,6 +111,12 @@ export function gradeExam(paper: ExamPaper, answersByQid: Record<string, Record<
       } else ok = raw === String(f.answer);
       fieldResults[f.key] = ok;
       if (ok) got += f.points;
+    }
+    // 公式の解答規則（同一科目の同側重複使用は不正解）を演習の採点と同一ロジックで適用する
+    if (item.question.journal) {
+      for (const k of duplicateInvalidatedKeys(item.fields, answers)) {
+        if (fieldResults[k]) { fieldResults[k] = false; got -= item.fields.find((f) => f.key === k)!.points; }
+      }
     }
     perQuestion[item.question.id] = { got, max: item.sectionPoints, fieldResults };
     bySection[item.section].got += got;
