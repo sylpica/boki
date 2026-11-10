@@ -1,7 +1,7 @@
 /* boki service worker
    - 画面遷移（HTML）はネットワーク優先：デプロイ直後から新しいビルドが届くようにする
    - 静的アセット（ハッシュ付きファイル名）は stale-while-revalidate */
-const CACHE = 'boki-cache-v3';
+const CACHE = 'boki-cache-v4';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.add('./')).then(() => self.skipWaiting()));
 });
