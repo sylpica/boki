@@ -82,6 +82,37 @@ textarea { width: 100%; }
 .gloss-item { background: var(--panel); border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.6rem 0.8rem; margin: 0.4rem 0; }
 .gloss-item summary { cursor: pointer; font-weight: 700; padding: 0.4rem 0; }
 .footer { max-width: 62rem; margin: 0 auto; padding: 0.8rem 0.9rem calc(1.2rem + env(safe-area-inset-bottom)); color: var(--muted); font-size: 0.8rem; }
+/* 単語帳 */
+.flashcard { border: 2px solid var(--primary); border-radius: 0.9rem; padding: 1rem; min-height: 11rem; cursor: pointer; background: var(--chip); }
+.flashcard:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.card-side-label { color: var(--muted); font-size: 0.8rem; }
+.card-term { font-size: 1.7rem; display: block; margin: 0.8rem 0 0.3rem; }
+.card-face { overflow-wrap: anywhere; }
+.card-start-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.6rem; }
+.card-start-buttons button { min-height: 3.4rem; font-size: 1.05rem; }
+.card-summary { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.4rem 0; font-weight: 700; }
+.card-eval { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.7rem 0; }
+.card-eval .muted { width: 100%; margin: 0; }
+/* 図表 */
+.fig { margin: 0.8rem 0; }
+.fig figcaption { font-weight: 700; margin-bottom: 0.4rem; }
+.fig-table, .t-account { width: 100%; border-collapse: collapse; margin: 0.4rem 0; }
+.fig-table th, .fig-table td, .t-account th, .t-account td { border: 1px solid var(--line); padding: 0.35rem 0.5rem; font-size: 0.95rem; }
+.fig-total td { font-weight: 800; background: var(--chip); }
+.flow-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.4rem 0; padding: 0; }
+.flow-steps li { display: inline-flex; align-items: center; gap: 0.3rem; }
+.flow-step { background: var(--chip); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.35rem 0.55rem; font-weight: 700; }
+.flow-arrow { color: var(--muted); }
+.bs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; align-items: start; }
+.file-label { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 0.55rem; padding: 0.5rem 0.8rem; cursor: pointer; min-height: 2.6rem; background: var(--panel); }
+.fields-table th[scope='row'] { text-align: left; font-weight: 600; min-width: 10rem; }
+.fields-table td input, .fields-table td select { width: 100%; }
+.fields-table .row-correct th, .fields-table .row-correct td { border-color: var(--ok); }
+.fields-table .row-wrong th, .fields-table .row-wrong td { border-color: var(--ng); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
 @media (max-width: 640px) {
   .home-grid { grid-template-columns: 1fr 1fr; }
   .fields { grid-template-columns: 1fr; }

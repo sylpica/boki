@@ -121,6 +121,29 @@ export interface ExamRecord {
   questionIds: string[];
   /** 解答に要した秒数（監査対応で追加。旧データには存在しない場合がある） */
   seconds?: number;
+  /** 採点方式の版。1/未設定=欄ごとの配点方式（旧）、2=欄正誤ベースの按分方式。旧記録の得点は書き換えない */
+  gradingVersion?: number;
+}
+
+/** 単語帳カードの学習状態（問題の解答履歴とは分離して記録する） */
+export interface CardStat {
+  seen: number;
+  known: number;
+  unsure: number;
+  unknown: number;
+  lastSeenAt: number;
+  /** 次に復習すべき時刻（ミリ秒）。0は未設定 */
+  dueAt: number;
+}
+
+/** 単語帳セッションの途中状態（再開用） */
+export interface CardSession {
+  ids: string[];
+  idx: number;
+  /** セッション開始時に選んだ面。以後の各カードもこの面から表示する */
+  startSide: 'front' | 'back';
+  shuffle: boolean;
+  savedAt: number;
 }
 
 export interface PracticeDraft {
@@ -148,10 +171,18 @@ export interface UserData {
     examDate: string;
     dailyGoalMinutes: number;
     noCalcMode: boolean;
+    /** 通常演習・復習で問題順をシャッフルするか（模試には適用しない） */
+    shufflePractice: boolean;
   };
   draft?: { kind: string; payload: unknown; savedAt: number } | null;
   /** 教材の閲覧段階（タブ位置）の保存 */
   lessonStages: Record<string, string>;
   /** 通常演習・復習の途中状態 */
   practiceDraft?: PracticeDraft | null;
+  /** 単語帳カードのブックマーク（問題ブックマークとは名前空間を分離し、IDは 'card:' で始まる） */
+  cardBookmarks: string[];
+  /** 単語帳カードの学習状態 */
+  cardStats: Record<string, CardStat>;
+  /** 単語帳の途中状態 */
+  cardSession?: CardSession | null;
 }

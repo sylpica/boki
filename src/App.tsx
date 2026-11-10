@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AttemptRecord, Difficulty, ExamRecord, Lesson, Question, Section, UserData } from './types';
 import { ALL_QUESTIONS, GLOSSARY, LESSONS, LESSON_MAP, QUESTION_MAP, TOPICS, INDEPENDENT_QUESTIONS, DERIVED_QUESTIONS } from './data';
-import { fieldsForQuestion, grade, normalizeAmountInput } from './lib/fields';
-import { pickQuestions } from './lib/shuffle';
+import { fieldsForQuestion, grade } from './lib/fields';
+import { pickQuestions, applyNoCalc, shuffle, mulberry32 } from './lib/shuffle';
 import { buildExam, gradeExam, SECTION_MAX, PASS_LINE, TARGET_LINE, EXAM_MINUTES, type ExamPaper } from './lib/exam';
-import { loadUserData, saveUserData } from './lib/storage';
+import { loadUserData, saveUserData, wasRecoveredFromCorrupt, corruptBackup, exportUserDataJson, parseImportedJson } from './lib/storage';
 import { reviewQueue, topicStats } from './lib/analytics';
+import { buildCards, isDue } from './lib/flashcards';
+import CardsView from './CardsView';
+import { LessonFigure } from './Figures';
 
 type View =
   | { name: 'home' }
@@ -13,6 +16,7 @@ type View =
   | { name: 'lesson'; id: string }
   | { name: 'glossary' }
   | { name: 'practice-setup' }
+  | { name: 'cards' }
   | { name: 'practice'; ids: string[]; mode: 'practice' | 'review'; resume?: boolean }
   | { name: 'exam-setup' }
   | { name: 'exam'; paper: ExamPaper; startedAt: number }
@@ -53,6 +57,9 @@ export default function App() {
   const lastExam = data.exams[data.exams.length - 1];
   const reviewCount = useMemo(() => reviewQueue(data.attempts, ALL_QUESTIONS.map((q) => q.id)).length, [data.attempts]);
   const examDraft = data.draft?.kind === 'exam' ? (data.draft.payload as { paper: ExamPaper; answers: Record<string, Record<string, string>>; startedAt: number }) : null;
+  const allCards = useMemo(() => buildCards(GLOSSARY), []);
+  const dueCardCount = useMemo(() => allCards.filter((c) => isDue(data.cardStats[c.id], Date.now())).length, [allCards, data.cardStats]);
+  const [recovered] = useState(() => wasRecoveredFromCorrupt());
 
   return (
     <div className="app" data-theme={effectiveDark ? 'dark' : 'light'} style={{ fontSize: `${data.settings.fontScale}rem` }}>
@@ -72,6 +79,11 @@ export default function App() {
             <p>学習データの保存に失敗しました（ブラウザの保存容量が不足している可能性があります）。古い履歴が失われるおそれがあるため、不要なブラウザデータを整理してから学習を続けてください。</p>
           </section>
         )}
+        {recovered && (
+          <section className="panel warn-panel" role="alert">
+            <p>保存されていた学習データが読み取れなかったため、元のデータは消さずに退避し、新しい状態で開始しました。退避したデータは設定画面からダウンロードできます。</p>
+          </section>
+        )}
         {view.name === 'home' && (
           <div>
             <section className="home-grid" aria-label="主要機能">
@@ -82,6 +94,10 @@ export default function App() {
               <button className="home-card" onClick={() => setView({ name: 'practice-setup' })}>
                 <span className="home-card-title">問題演習</span>
                 <span className="home-card-sub">全{ALL_QUESTIONS.length}問（独立{INDEPENDENT_QUESTIONS.length}・派生{DERIVED_QUESTIONS.length}）</span>
+              </button>
+              <button className="home-card" onClick={() => setView({ name: 'cards' })}>
+                <span className="home-card-title">単語帳</span>
+                <span className="home-card-sub">カード{allCards.length}枚・復習対象 {dueCardCount} 枚</span>
               </button>
               <button className="home-card" onClick={() => setView({ name: 'exam-setup' })}>
                 <span className="home-card-title">模擬試験</span>
@@ -106,6 +122,14 @@ export default function App() {
                 <p>演習の途中データがあります（{data.practiceDraft.ids.length}問中 {Object.keys(data.practiceDraft.gradedAnswers).length} 問採点済み）。</p>
                 <button className="primary" onClick={() => setView({ name: 'practice', ids: data.practiceDraft!.ids, mode: data.practiceDraft!.mode, resume: true })}>演習を再開する</button>{' '}
                 <button onClick={() => update((d) => ({ ...d, practiceDraft: null }))}>破棄する</button>
+              </section>
+            )}
+
+            {data.cardSession && data.cardSession.ids.length > 0 && (
+              <section className="panel warn-panel">
+                <p>単語帳の途中データがあります（{data.cardSession.ids.length}枚中 {data.cardSession.idx + 1} 枚目）。</p>
+                <button className="primary" onClick={() => setView({ name: 'cards' })}>単語帳を再開する</button>{' '}
+                <button onClick={() => update((d) => ({ ...d, cardSession: null }))}>破棄する</button>
               </section>
             )}
 
@@ -135,6 +159,7 @@ export default function App() {
         {view.name === 'lesson' && <LessonView id={view.id} data={data} update={update} go={setView} />}
         {view.name === 'glossary' && <GlossaryView go={setView} />}
         {view.name === 'practice-setup' && <PracticeSetup data={data} update={update} go={setView} startReview={startReview} />}
+        {view.name === 'cards' && <CardsView data={data} update={update} goLesson={(id) => setView({ name: 'lesson', id })} goHome={() => setView({ name: 'home' })} />}
         {view.name === 'practice' && (
           <PracticeSession key={view.ids.join(',') + (view.resume ? ':resume' : '')} ids={view.ids} mode={view.mode} resume={!!view.resume} data={data} update={update} go={setView} />
         )}
@@ -154,11 +179,19 @@ export default function App() {
   function startReview() {
     const queue = reviewQueue(data.attempts, ALL_QUESTIONS.map((q) => q.id));
     const practiced = new Set(data.attempts.map((a) => a.questionId));
-    const ids = queue.slice(0, 20).map((x) => x.id);
-    if (ids.length === 0) {
-      const fresh = pickQuestions(ALL_QUESTIONS.filter((q) => !practiced.has(q.id)), { count: 10, recentIds: data.recentQuestionIds });
+    const noCalc = data.settings.noCalcMode;
+    // 計算問題除外は復習経路にも適用する（BOKI-04）。模試には適用しない
+    const selected = queue
+      .map((x) => x.id)
+      .filter((id) => { const q = QUESTION_MAP.get(id); return !!q && (!noCalc || !q.needsCalc); })
+      .slice(0, 20);
+    if (selected.length === 0) {
+      const fresh = pickQuestions(applyNoCalc(ALL_QUESTIONS.filter((q) => !practiced.has(q.id)), noCalc), { count: 10, recentIds: data.recentQuestionIds, shuffle: data.settings.shufflePractice });
       setView({ name: 'practice', ids: fresh.map((q) => q.id), mode: 'review' });
     } else {
+      const ids = data.settings.shufflePractice
+        ? shuffle(selected, mulberry32(((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0)))
+        : selected;
       setView({ name: 'practice', ids, mode: 'review' });
     }
   }
@@ -253,6 +286,7 @@ function LessonView({ id, data, update, go }: { id: string; data: UserData; upda
       </div>
       <section className="panel" role="tabpanel" id="stage-panel" aria-labelledby={`stage-tab-${stage}`}>
         <p className="prewrap">{stageTexts[stage]}</p>
+        {stage === 0 && <LessonFigure lessonId={lesson.id} />}
         {stage === 1 && lesson.exampleJournal && (
           <div>
             <h3>仕訳例{lesson.exampleNote ? `（${lesson.exampleNote}）` : ''}</h3>
@@ -274,9 +308,10 @@ function LessonView({ id, data, update, go }: { id: string; data: UserData; upda
           </div>
         )}
         <h2>この単元の問題</h2>
-        <p className="muted">{related.length} 問</p>
-        <button className="primary" disabled={related.length === 0} onClick={() => {
-          const picked = pickQuestions(related, { count: Math.min(10, related.length), recentIds: data.recentQuestionIds });
+        <p className="muted">{related.length} 問{data.settings.noCalcMode ? `（計算問題除外モードのため、出題対象は ${applyNoCalc(related, true).length} 問）` : ''}</p>
+        <button className="primary" disabled={applyNoCalc(related, data.settings.noCalcMode).length === 0} onClick={() => {
+          const pool = applyNoCalc(related, data.settings.noCalcMode);
+          const picked = pickQuestions(pool, { count: Math.min(10, pool.length), recentIds: data.recentQuestionIds, shuffle: data.settings.shufflePractice });
           go({ name: 'practice', ids: picked.map((q) => q.id), mode: 'practice' });
         }}>この単元を演習する</button>{' '}
         <button onClick={() => update((d) => ({ ...d, lessonsDone: done ? d.lessonsDone.filter((x) => x !== lesson.id) : [...d.lessonsDone, lesson.id] }))}>
@@ -362,16 +397,15 @@ function PracticeSetup({ data, update, go, startReview }: { data: UserData; upda
   for (const a of data.attempts) practiced.set(a.questionId, [...(practiced.get(a.questionId) ?? []), a]);
   const weakTopics = new Set(topicStats(data.attempts, QUESTION_MAP).filter((t) => t.attempts >= 3 && t.mastery < 70).map((t) => t.topic));
 
-  const pool = ALL_QUESTIONS.filter((q) =>
+  const pool = applyNoCalc(ALL_QUESTIONS.filter((q) =>
     (topic === 'all' || q.topic === topic) &&
     (section === 'all' || q.section === section) &&
     (difficulty === 'all' || q.difficulty === difficulty) &&
-    (!noCalc || !q.needsCalc) &&
     (!onlyWeak || weakTopics.has(q.topic)) &&
     (!onlyWrong || (practiced.get(q.id) ?? []).some((a) => !a.correct)) &&
     (!onlyUnseen || !practiced.has(q.id)) &&
     (!onlyBookmarked || data.bookmarks.includes(q.id))
-  );
+  ), noCalc);
 
   return (
     <div>
@@ -405,11 +439,12 @@ function PracticeSetup({ data, update, go, startReview }: { data: UserData; upda
           <label><input type="checkbox" checked={onlyWrong} onChange={(e) => setOnlyWrong(e.target.checked)} /> 間違えた問題のみ</label>
           <label><input type="checkbox" checked={onlyUnseen} onChange={(e) => setOnlyUnseen(e.target.checked)} /> 未出題のみ</label>
           <label><input type="checkbox" checked={onlyBookmarked} onChange={(e) => setOnlyBookmarked(e.target.checked)} /> ブックマークのみ</label>
+          <label><input type="checkbox" checked={data.settings.shufflePractice} onChange={(e) => update((d) => ({ ...d, settings: { ...d.settings, shufflePractice: e.target.checked } }))} /> 問題順をシャッフルする</label>
         </div>
-        <p aria-live="polite">{pool.length === 0 ? '条件に該当する問題がありません。条件を緩めてください。' : `対象 ${pool.length} 問から ${Math.min(count, pool.length)} 問をシャッフルして出題します`}</p>
+        <p aria-live="polite">{pool.length === 0 ? '条件に該当する問題がありません。条件を緩めてください。' : `対象 ${pool.length} 問から ${Math.min(count, pool.length)} 問を${data.settings.shufflePractice ? 'シャッフルして' : '順番どおりに'}出題します`}</p>
         <button className="primary" disabled={pool.length === 0} onClick={() => {
           const wrongIds = new Set([...practiced.entries()].filter(([, v]) => v.every((a) => a.correct)).map(([k]) => k));
-          const picked = pickQuestions(pool, { count, recentIds: data.recentQuestionIds, deprioritizeIds: [...wrongIds] });
+          const picked = pickQuestions(pool, { count, recentIds: data.recentQuestionIds, deprioritizeIds: [...wrongIds], shuffle: data.settings.shufflePractice });
           go({ name: 'practice', ids: picked.map((q) => q.id), mode: 'practice' });
         }}>演習を開始する</button>{' '}
         <button onClick={startReview}>復習を開始する</button>
@@ -426,6 +461,44 @@ export function FieldsInput({ q, fields, answers, setAnswers, graded, disabled }
   graded?: Record<string, boolean> | null;
   disabled?: boolean;
 }) {
+  const input = (f: (typeof fields)[number]) => f.kind === 'amount' ? (
+    <input
+      inputMode="numeric"
+      aria-label={f.label}
+      disabled={disabled}
+      value={answers[f.key] ?? ''}
+      onChange={(e) => setAnswers({ ...answers, [f.key]: e.target.value })}
+      placeholder="数字のみ"
+    />
+  ) : (
+    <select aria-label={f.label} disabled={disabled} value={answers[f.key] ?? ''} onChange={(e) => setAnswers({ ...answers, [f.key]: e.target.value })}>
+      <option value="">選択してください</option>
+      {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+  // 帳票系（試算表・精算表・財務諸表・帳簿）は、項目と解答欄を行列の表として提示する
+  const tabular = !q.journal && fields.length >= 2;
+  if (tabular) {
+    return (
+      <div className="fields-table-wrap">
+        <div className="table-scroll">
+          <table className="fig-table fields-table">
+            <thead><tr><th>項目</th><th>解答</th>{graded ? <th>正誤</th> : null}</tr></thead>
+            <tbody>
+              {fields.map((f) => (
+                <tr key={f.key} className={graded ? (graded[f.key] ? 'row-correct' : 'row-wrong') : ''}>
+                  <th scope="row">{f.label}</th>
+                  <td>{input(f)}</td>
+                  {graded ? <td aria-label={graded[f.key] ? '正解' : '不正解'}>{graded[f.key] ? '○' : '×'}</td> : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted">金額は数字のみで入力してください。カンマ・円記号・文字が含まれると不正解になります（本試験の公式注意と同じ扱いで、入力を黙って直すことはしません）。</p>
+      </div>
+    );
+  }
   return (
     <div className="fields">
       {fields.map((f) => {
@@ -433,34 +506,21 @@ export function FieldsInput({ q, fields, answers, setAnswers, graded, disabled }
         return (
           <label key={f.key} className={`field${state}`}>
             <span>{f.label}{graded ? (graded[f.key] ? ' ○' : ' ×') : ''}</span>
-            {f.kind === 'amount' ? (
-              <input
-                inputMode="numeric"
-                aria-label={f.label}
-                disabled={disabled}
-                value={answers[f.key] ?? ''}
-                onChange={(e) => setAnswers({ ...answers, [f.key]: normalizeAmountInput(e.target.value) })}
-                placeholder="数字のみ"
-              />
-            ) : (
-              <select aria-label={f.label} disabled={disabled} value={answers[f.key] ?? ''} onChange={(e) => setAnswers({ ...answers, [f.key]: e.target.value })}>
-                <option value="">選択してください</option>
-                {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            )}
+            {input(f)}
           </label>
         );
       })}
-      <p className="muted">金額は数字のみで入力します（円記号・カンマ・文字を入力すると本試験では不正解になります）。仕訳では同じ科目を借方・貸方のそれぞれの中で2回使わないでください（公式の解答規則）。</p>
+      <p className="muted">金額は数字のみで入力してください。カンマ・円記号・文字が含まれると不正解になります（本試験の公式注意と同じ扱いで、入力を黙って直すことはしません）。仕訳では同じ科目を借方・貸方のそれぞれの中で2回使わないでください（公式の解答規則）。</p>
     </div>
   );
 }
 
-/** 安全な四則演算パーサ（eval系を使わない。数値・+ - * / ・括弧・小数だけを許可） */
+/** 安全な四則演算パーサ（eval系を使わない。数値・+ - * / ・括弧・小数だけを許可。長さと入れ子の深さに上限を設ける） */
 export function evalExpr(src: string): number | null {
   const s = src.replace(/\s+/g, '');
-  if (!s || !/^[0-9+\-*/.()]+$/.test(s)) return null;
+  if (!s || s.length > 100 || !/^[0-9+\-*/.()]+$/.test(s)) return null;
   let p = 0;
+  let depth = 0;
   const pk = () => s[p] ?? '';
   const ex = (): number | null => {
     let v = tm();
@@ -485,14 +545,16 @@ export function evalExpr(src: string): number | null {
     return v;
   };
   const fc = (): number | null => {
+    if (depth > 20) return null;
     if (pk() === '(') {
-      p++;
+      p++; depth++;
       const v = ex();
+      depth--;
       if (v === null || pk() !== ')') return null;
       p++;
       return v;
     }
-    if (pk() === '-') { p++; const v = fc(); return v === null ? null : -v; }
+    if (pk() === '-') { p++; depth++; const v = fc(); depth--; return v === null ? null : -v; }
     const m = /^[0-9]*\.?[0-9]+/.exec(s.slice(p));
     if (!m) return null;
     p += m[0].length;
@@ -519,8 +581,9 @@ function Calculator() {
 }
 
 function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[]; mode: 'practice' | 'review'; resume?: boolean; data: UserData; update: (fn: (d: UserData) => UserData) => void; go: (v: View) => void }) {
-  const questions = ids.map((id) => QUESTION_MAP.get(id)).filter((q): q is Question => !!q);
   const draft = resume ? data.practiceDraft : null;
+  const [order, setOrder] = useState<string[]>(() => (draft ? draft.ids : ids));
+  const questions = order.map((id) => QUESTION_MAP.get(id)).filter((q): q is Question => !!q);
   const [idx, setIdx] = useState(() => Math.min(draft?.idx ?? 0, Math.max(0, questions.length - 1)));
   const [answers, setAnswers] = useState<Record<string, string>>(() => draft?.currentAnswers ?? {});
   const [gradedMap, setGradedMap] = useState<Record<string, ReturnType<typeof grade>>>(() => {
@@ -538,29 +601,72 @@ function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[
   const startedRef = useRef(Date.now());
   const draftAnswersRef = useRef<Record<string, Record<string, string>>>(draft ? { ...draft.gradedAnswers } : {});
   const draftHintsRef = useRef<Record<string, boolean>>(draft ? { ...draft.usedHints } : {});
+  // 未採点問題の入力途中データとヒント状態を問題ごとに保持する（移動・並び替えで消えないように）
+  const pendingRef = useRef<Record<string, Record<string, string>>>(draft ? { [draft.ids[draft.idx] ?? '']: draft.currentAnswers } : {});
+  const hintRef = useRef<Record<string, { level: number; used: boolean }>>({});
   const q = questions[idx];
   const graded = q ? gradedMap[q.id] : undefined;
 
-  useEffect(() => { startedRef.current = Date.now(); setAnswers({}); setHintLevel(0); setUsedHint(false); }, [idx]);
   // 途中状態を自動保存する（R32）。全問採点済みになったら下書きは消す。
   useEffect(() => {
     const gradedAnswers: Record<string, Record<string, string>> = {};
     const usedHints: Record<string, boolean> = {};
-    for (const [qid, g] of Object.entries(gradedMap)) {
-      void g;
+    for (const qid of Object.keys(gradedMap)) {
       gradedAnswers[qid] = draftAnswersRef.current[qid] ?? {};
       usedHints[qid] = draftHintsRef.current[qid] ?? false;
     }
     const allDone = questions.length > 0 && Object.keys(gradedMap).length >= questions.length;
     update((d) => ({
       ...d,
-      practiceDraft: allDone ? null : { ids, mode, idx, gradedAnswers, currentAnswers: answers, usedHints, savedAt: Date.now() },
+      practiceDraft: allDone ? null : { ids: order, mode, idx, gradedAnswers, currentAnswers: answers, usedHints, savedAt: Date.now() },
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, gradedMap, answers]);
-  if (!q) return <div><p>問題がありません。</p><button onClick={() => go({ name: 'home' })}>ホームへ</button></div>;
+  }, [idx, gradedMap, answers, order]);
+  if (!q) return <div><p>問題がありません。条件を変えてもう一度お試しください。</p><button onClick={() => go({ name: 'home' })}>ホームへ</button></div>;
   const fields = fieldsForQuestion(q);
   const doneCount = Object.keys(gradedMap).length;
+
+  // 問題の移動。復元直後のマウントで入力を消す旧欠陥（BOKI-02）を避けるため、
+  // リセットは移動操作の中でのみ行い、未採点の入力は問題ごとに退避・復元する。
+  const goTo = (j: number) => {
+    if (!gradedMap[q.id]) {
+      pendingRef.current[q.id] = answers;
+      hintRef.current[q.id] = { level: hintLevel, used: usedHint };
+    }
+    const nq = questions[j];
+    setIdx(j);
+    startedRef.current = Date.now();
+    if (!nq) return;
+    if (gradedMap[nq.id]) {
+      setAnswers(draftAnswersRef.current[nq.id] ?? {});
+      setHintLevel(0); setUsedHint(draftHintsRef.current[nq.id] ?? false);
+    } else {
+      setAnswers(pendingRef.current[nq.id] ?? {});
+      const h = hintRef.current[nq.id];
+      setHintLevel(h?.level ?? 0); setUsedHint(h?.used ?? false);
+    }
+  };
+
+  // 再シャッフル：採点済みの問題は位置と結果を固定し、未採点の問題だけを並べ替える
+  const reshuffle = () => {
+    if (!gradedMap[q.id]) {
+      pendingRef.current[q.id] = answers;
+      hintRef.current[q.id] = { level: hintLevel, used: usedHint };
+    }
+    const ungradedPos = order.map((id, i) => (gradedMap[id] ? -1 : i)).filter((i) => i >= 0);
+    if (ungradedPos.length < 2) return;
+    const shuffledIds = shuffle(ungradedPos.map((i) => order[i]!), mulberry32(((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0)));
+    const next = [...order];
+    ungradedPos.forEach((pos, k) => { next[pos] = shuffledIds[k]!; });
+    setOrder(next);
+    const ni = next.indexOf(q.id);
+    setIdx(ni);
+    if (!gradedMap[q.id]) {
+      setAnswers(pendingRef.current[q.id] ?? {});
+      const h = hintRef.current[q.id];
+      setHintLevel(h?.level ?? 0); setUsedHint(h?.used ?? false);
+    }
+  };
 
   const submit = () => {
     const g = grade(q, answers);
@@ -579,7 +685,10 @@ function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[
     <div>
       <div className="session-head">
         <span>{mode === 'review' ? '復習' : '演習'} {idx + 1} / {questions.length}（採点済み {doneCount}）</span>
-        <button onClick={() => go({ name: 'home' })}>終了する</button>
+        <span>
+          <button onClick={reshuffle}>並び替え</button>{' '}
+          <button onClick={() => go({ name: 'home' })}>終了する</button>
+        </span>
       </div>
       <section className="panel">
         <p className="muted">{SECTION_LABEL[q.section]}｜{q.syllabus}｜難易度：{DIFF_LABEL[q.difficulty]}{q.needsCalc ? `｜計算：${q.calcType ?? 'あり'}` : '｜計算不要'}{' '}
@@ -615,8 +724,11 @@ function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[
         {hintLevel > 0 && !graded && (
           <div className="hint-box">{q.hints.slice(0, hintLevel).map((h, i) => <p key={i}>ヒント{i + 1}：{h}</p>)}</div>
         )}
+        {idx > 0 && (
+          <button className="next-btn" onClick={() => goTo(idx - 1)}>前の問題へ</button>
+        )}
         {idx + 1 < questions.length ? (
-          <button className="primary next-btn" disabled={!graded} onClick={() => setIdx(idx + 1)}>次の問題へ</button>
+          <button className="primary next-btn" disabled={!graded} onClick={() => goTo(idx + 1)}>次の問題へ</button>
         ) : graded ? (
           <button className="primary next-btn" onClick={() => go({ name: 'analytics' })}>結果・成績を見る</button>
         ) : null}
@@ -642,8 +754,8 @@ function ExamSetup({ go, update }: { go: (v: View) => void; update: (fn: (d: Use
     <div>
       <h1>模擬試験</h1>
       <section className="panel">
-        <p>本試験（ネット試験）と同じ条件で実施します：試験時間 {EXAM_MINUTES} 分、第1問 {SECTION_MAX.q1} 点・第2問 {SECTION_MAX.q2} 点・第3問 {SECTION_MAX.q3} 点の合計100点、合格基準 {PASS_LINE} 点、目標 {TARGET_LINE} 点。ヒント・正答表示・途中採点・計算問題除外は無効です。</p>
-        <p className="muted">本試験では条件を満たす実物の電卓と、会場から配布される計算・メモ用紙（A4・2枚）を使います。本アプリの模試ではアプリ内電卓を表示しないため、実物の電卓と紙を用意してください（本番との相違はこの点のみです）。</p>
+        <p>公式資料で確認できる条件に合わせます：試験時間 {EXAM_MINUTES} 分、第1問 {SECTION_MAX.q1} 点・第2問 {SECTION_MAX.q2} 点・第3問 {SECTION_MAX.q3} 点の合計100点、合格基準 {PASS_LINE} 点（目標 {TARGET_LINE} 点は学習目標です）。ヒント・正答表示・途中採点・計算問題除外は無効です。</p>
+        <p className="muted">設問ごとの配点内訳や部分点の付け方など、公式が公開していない採点の細部は、本アプリ独自の方法（欄の正誤に応じた按分）で近似しています。本試験は会場のPCで受験し、条件を満たす実物の電卓と会場から配布される計算・メモ用紙（A4・2枚）を使います。本アプリの模試ではアプリ内電卓を表示しないため、実物の電卓と紙を用意してください。</p>
         <div className="filters">
           <select aria-label="固定模試の回" value={setNo} onChange={(e) => setSetNo(Number(e.target.value))}>
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>固定模試 第{n}回</option>)}
@@ -692,16 +804,17 @@ function ExamSession({ paper, startedAt, data, update, go }: { paper: ExamPaper;
     const rec: ExamRecord = {
       at: Date.now(), kind: paper.kind, setLabel: paper.setLabel, total: result.total,
       bySection: result.bySection, questionIds: paper.items.map((i) => i.question.id),
-      seconds: elapsed,
+      seconds: elapsed, gradingVersion: result.gradingVersion,
     };
     update((d) => ({
       ...d, draft: null, exams: [...d.exams, rec],
       attempts: [...d.attempts, ...paper.items.map((i) => ({
         questionId: i.question.id, at: Date.now(),
-        correct: (result.perQuestion[i.question.id]?.got ?? 0) === i.sectionPoints,
-        fieldCorrect: Object.values(result.perQuestion[i.question.id]?.fieldResults ?? {}).filter(Boolean).length,
+        correct: result.perQuestion[i.question.id]?.correct ?? false,
+        fieldCorrect: result.perQuestion[i.question.id]?.correctCount ?? 0,
         fieldTotal: i.fields.length, usedHint: false, seconds: 0, mode: 'exam' as const, noCalcMode: false,
         answers: answersByQid[i.question.id] ?? {},
+        fieldResults: result.perQuestion[i.question.id]?.fieldResults,
       }))],
     }));
   }
@@ -790,7 +903,7 @@ function AnalyticsView({ data, go, startReview }: { data: UserData; go: (v: View
       <section className="panel">
         <h2>模擬試験の推移</h2>
         {data.exams.length === 0 ? <p className="muted">まだ模擬試験の記録がありません。</p> : (
-          <ul>{data.exams.map((e, i) => <li key={i}>{new Date(e.at).toLocaleString('ja-JP')}｜{e.setLabel}｜<strong>{e.total}点</strong>（第1問 {e.bySection.q1.got}・第2問 {e.bySection.q2.got}・第3問 {e.bySection.q3.got}）目標{TARGET_LINE}点まで {Math.max(0, TARGET_LINE - e.total)} 点{e.seconds !== undefined ? `｜所要 ${Math.floor(e.seconds / 60)}分${e.seconds % 60}秒` : ''}</li>)}</ul>
+          <ul>{data.exams.map((e, i) => <li key={i}>{new Date(e.at).toLocaleString('ja-JP')}｜{e.setLabel}｜<strong>{e.total}点</strong>（第1問 {e.bySection.q1.got}・第2問 {e.bySection.q2.got}・第3問 {e.bySection.q3.got}）目標{TARGET_LINE}点まで {Math.max(0, TARGET_LINE - e.total)} 点{e.seconds !== undefined ? `｜所要 ${Math.floor(e.seconds / 60)}分${e.seconds % 60}秒` : ''}{e.gradingVersion === 2 ? '' : '｜旧採点方式の記録'}</li>)}</ul>
         )}
       </section>
       <section className="panel">
@@ -832,6 +945,25 @@ function AnalyticsView({ data, go, startReview }: { data: UserData; go: (v: View
 function SettingsView({ data, update }: { data: UserData; update: (fn: (d: UserData) => UserData) => void }) {
   const s = data.settings;
   const set = (patch: Partial<UserData['settings']>) => update((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
+  const [importMsg, setImportMsg] = useState('');
+  const download = (name: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const onImportFile = (file: File | undefined) => {
+    if (!file) return;
+    file.text().then((text) => {
+      const r = parseImportedJson(text);
+      if (!r.ok) { setImportMsg(r.error); return; }
+      if (window.confirm('現在の学習データを、読み込んだ内容で置き換えますか？（現在のデータは失われます。先に書き出しを済ませてください）')) {
+        update(() => r.data);
+        setImportMsg('学習データを取り込みました。');
+      }
+    }).catch(() => setImportMsg('ファイルを読み取れませんでした。'));
+  };
+  const backup = corruptBackup();
   return (
     <div>
       <h1>設定</h1>
@@ -856,6 +988,20 @@ function SettingsView({ data, update }: { data: UserData; update: (fn: (d: UserD
         <button onClick={() => { if (window.confirm('学習履歴をすべて削除しますか？')) update(() => loadUserDataFresh()); }}>学習履歴をリセット</button>
       </section>
       <section className="panel">
+        <h2>学習データの書き出し・取り込み</h2>
+        <p className="muted">機種変更やブラウザ変更のときは、書き出したJSONを取り込むと履歴を引き継げます。取り込むと現在のデータは置き換わります。</p>
+        <button onClick={() => download('boki-backup.json', exportUserDataJson(data))}>学習データを書き出す</button>{' '}
+        <label className="file-label">学習データを取り込む
+          <input type="file" accept="application/json,.json" className="visually-hidden" onChange={(e) => onImportFile(e.target.files?.[0])} />
+        </label>
+        {importMsg && <p role="status">{importMsg}</p>}
+        {backup && (
+          <p className="muted">読み取れなかった保存データの退避があります。
+            <button onClick={() => download('boki-corrupt-backup.json', backup)}>退避データをダウンロード</button>
+          </p>
+        )}
+      </section>
+      <section className="panel">
         <h2>このアプリについて</h2>
         <p className="muted">対象：日商簿記検定3級 ネット試験（2027年度以降の出題区分表・配点 第1問45点／第2問25点／第3問30点、60分、合格基準70点）。日本商工会議所とは無関係の独自アプリです。問題データの適用年度は2027年度、バージョン1.0です。収録問題は独立問題 {INDEPENDENT_QUESTIONS.length} 問と、取引モデルから導出した派生問題 {DERIVED_QUESTIONS.length} 問の合計 {ALL_QUESTIONS.length} 問で、全問について借方・貸方合計の一致と科目の妥当性を自動検証しています。</p>
       </section>
@@ -870,9 +1016,12 @@ function loadUserDataFresh(): UserData {
 function SearchView({ data, go }: { data: UserData; go: (v: View) => void }) {
   const [query, setQuery] = useState('');
   const [noCalcOnly, setNoCalcOnly] = useState(false);
-  const lessons = query ? LESSONS.filter((l) => l.title.includes(query) || l.stages.overview.includes(query)) : [];
-  const terms = query ? GLOSSARY.filter((g) => g.term.includes(query) || g.short.includes(query)) : [];
-  const questions = query ? ALL_QUESTIONS.filter((q) => q.prompt.includes(query) || q.syllabus.includes(query)).slice(0, 30) : [];
+  const lessons = query ? LESSONS.filter((l) => l.title.includes(query) || l.stages.overview.includes(query) || l.stages.detail.includes(query) || l.stages.expert.includes(query) || l.stages.practice.includes(query)) : [];
+  const terms = query ? GLOSSARY.filter((g) => g.term.includes(query) || g.short.includes(query) || g.detail.includes(query)) : [];
+  // 先に全条件で絞り込んでから表示用に切り取る（旧実装は30件に切ってから絞っていたため件数が実際とずれていた）
+  const matchedQuestions = query ? ALL_QUESTIONS.filter((q) => q.prompt.includes(query) || q.syllabus.includes(query) || q.explanation.includes(query)) : [];
+  const filteredQuestions = matchedQuestions.filter((q) => !noCalcOnly || !q.needsCalc);
+  const questions = filteredQuestions.slice(0, 30);
   return (
     <div>
       <h1>横断検索</h1>
@@ -884,10 +1033,11 @@ function SearchView({ data, go }: { data: UserData; go: (v: View) => void }) {
             {lessons.map((l) => <p key={l.id}><button className="linklike" onClick={() => go({ name: 'lesson', id: l.id })}>{l.title}</button></p>)}
           </section>
           <section className="panel"><h2>辞典（{terms.length}）</h2>
-            {terms.map((g) => <p key={g.term}><strong>{g.term}</strong>：{g.short}</p>)}
+            {terms.map((g) => <p key={g.term + g.kind}><strong>{g.term}</strong>：{g.short}</p>)}
           </section>
-          <section className="panel"><h2>問題（{questions.filter((q) => !noCalcOnly || !q.needsCalc).length}）</h2>
-            {questions.filter((q) => !noCalcOnly || !q.needsCalc).map((q) => (
+          <section className="panel"><h2>問題（{filteredQuestions.length}）</h2>
+            {filteredQuestions.length > questions.length && <p className="muted">全 {filteredQuestions.length} 件のうち先頭 {questions.length} 件を表示しています。キーワードを絞ると残りも確認できます。</p>}
+            {questions.map((q) => (
               <p key={q.id}>{q.syllabus}｜{DIFF_LABEL[q.difficulty]}｜<button className="linklike" onClick={() => go({ name: 'practice', ids: [q.id], mode: 'practice' })}>この問題を解く</button><br /><span className="muted">{q.prompt.slice(0, 80)}…</span></p>
             ))}
           </section>

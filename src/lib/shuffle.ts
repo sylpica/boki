@@ -18,6 +18,15 @@ export function shuffle<T>(arr: readonly T[], rng: () => number): T[] {
   return out;
 }
 
+/**
+ * 計算問題除外の単一の適用点（BOKI-04）。
+ * 通常演習の全入口（演習設定・教材起点・復習・検索起点）はこの関数を通して対象を絞る。
+ * 模擬試験には適用しない。
+ */
+export function applyNoCalc<T extends { needsCalc: boolean }>(pool: readonly T[], noCalcMode: boolean): T[] {
+  return noCalcMode ? pool.filter((q) => !q.needsCalc) : [...pool];
+}
+
 export interface PoolOptions {
   count: number;
   /** 直近の演習で出題された問題ID（優先的に避ける） */
@@ -25,6 +34,8 @@ export interface PoolOptions {
   /** 既に正解済み等で後回しにしたいID */
   deprioritizeIds?: string[];
   seed?: number;
+  /** false のときはプールの並び順を保つ（シャッフルOFF設定用） */
+  shuffle?: boolean;
 }
 
 /**
@@ -36,9 +47,10 @@ export function pickQuestions<T extends { id: string }>(pool: readonly T[], opts
   const rng = mulberry32(opts.seed ?? ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0));
   const recent = new Set(opts.recentIds ?? []);
   const dep = new Set(opts.deprioritizeIds ?? []);
-  const fresh = shuffle(pool.filter((q) => !recent.has(q.id) && !dep.has(q.id)), rng);
-  const recentOk = shuffle(pool.filter((q) => recent.has(q.id) && !dep.has(q.id)), rng);
-  const depOk = shuffle(pool.filter((q) => dep.has(q.id)), rng);
+  const maybeShuffle = (arr: T[]) => (opts.shuffle === false ? arr : shuffle(arr, rng));
+  const fresh = maybeShuffle(pool.filter((q) => !recent.has(q.id) && !dep.has(q.id)));
+  const recentOk = maybeShuffle(pool.filter((q) => recent.has(q.id) && !dep.has(q.id)));
+  const depOk = maybeShuffle(pool.filter((q) => dep.has(q.id)));
   const ordered = [...fresh, ...recentOk, ...depOk];
   const seen = new Set<string>();
   const picked: T[] = [];

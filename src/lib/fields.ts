@@ -25,6 +25,18 @@ export function normalizeAmountInput(raw: string): string {
   return raw.replace(/[^0-9]/g, '');
 }
 
+/**
+ * 金額の正誤判定（演習・模試共通の契約）。
+ * 公式の解答注意「金額は数字のみで入力する」に合わせ、カンマ・円記号・文字・符号・小数点が
+ * 含まれる入力は、数値が一致しても不正解とする。全角数字は半角に読み替える。
+ * 入力欄で黙って除去して正解扱いにすると本試験の感覚とずれるため、整形は行わない。
+ */
+export function amountIsCorrect(raw: string, answer: string | number): boolean {
+  const s = raw.trim().replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  if (!/^[0-9]+$/.test(s)) return false;
+  return Number(s) === Number(answer);
+}
+
 export interface GradeResult {
   fieldResults: Record<string, boolean>;
   correctCount: number;
@@ -64,8 +76,7 @@ export function grade(q: Question, answers: Record<string, string>): GradeResult
     const raw = (answers[f.key] ?? '').trim();
     let ok = false;
     if (f.kind === 'amount') {
-      const n = raw === '' ? NaN : Number(normalizeAmountInput(raw));
-      ok = !Number.isNaN(n) && n === Number(f.answer);
+      ok = amountIsCorrect(raw, f.answer);
     } else {
       ok = raw === String(f.answer);
     }
