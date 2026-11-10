@@ -99,6 +99,7 @@ textarea { width: 100%; }
 .fig-table, .t-account { width: 100%; border-collapse: collapse; margin: 0.4rem 0; }
 .fig-table th, .fig-table td, .t-account th, .t-account td { border: 1px solid var(--line); padding: 0.35rem 0.5rem; font-size: 0.95rem; }
 .fig-total td { font-weight: 800; background: var(--chip); }
+.fig-section th { text-align: left; background: var(--chip); font-weight: 800; }
 .flow-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.4rem 0; padding: 0; }
 .flow-steps li { display: inline-flex; align-items: center; gap: 0.3rem; }
 .flow-step { background: var(--chip); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.35rem 0.55rem; font-weight: 700; }

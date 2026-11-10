@@ -4,7 +4,7 @@ import { ALL_QUESTIONS, GLOSSARY, LESSONS, LESSON_MAP, QUESTION_MAP, TOPICS, IND
 import { fieldsForQuestion, grade } from './lib/fields';
 import { pickQuestions, applyNoCalc, shuffle, mulberry32 } from './lib/shuffle';
 import { buildExam, gradeExam, SECTION_MAX, PASS_LINE, TARGET_LINE, EXAM_MINUTES, type ExamPaper } from './lib/exam';
-import { loadUserData, saveUserData, wasRecoveredFromCorrupt, corruptBackup, exportUserDataJson, parseImportedJson } from './lib/storage';
+import { loadUserData, saveUserData, wasRecoveredFromCorrupt, corruptBackup, clearCorruptBackup, exportUserDataJson, parseImportedJson } from './lib/storage';
 import { reviewQueue, topicStats } from './lib/analytics';
 import { buildCards, isDue } from './lib/flashcards';
 import CardsView from './CardsView';
@@ -79,7 +79,7 @@ export default function App() {
             <p>学習データの保存に失敗しました（ブラウザの保存容量が不足している可能性があります）。古い履歴が失われるおそれがあるため、不要なブラウザデータを整理してから学習を続けてください。</p>
           </section>
         )}
-        {recovered && (
+        {recovered && corruptBackup() && (
           <section className="panel warn-panel" role="alert">
             <p>保存されていた学習データが読み取れなかったため、元のデータは消さずに退避し、新しい状態で開始しました。退避したデータは設定画面からダウンロードできます。</p>
           </section>
@@ -97,7 +97,7 @@ export default function App() {
               </button>
               <button className="home-card" onClick={() => setView({ name: 'cards' })}>
                 <span className="home-card-title">単語帳</span>
-                <span className="home-card-sub">カード{allCards.length}枚・復習対象 {dueCardCount} 枚</span>
+                <span className="home-card-sub">カード{allCards.length}枚・未学習・復習対象 {dueCardCount} 枚</span>
               </button>
               <button className="home-card" onClick={() => setView({ name: 'exam-setup' })}>
                 <span className="home-card-title">模擬試験</span>
@@ -604,6 +604,7 @@ function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[
   // 未採点問題の入力途中データとヒント状態を問題ごとに保持する（移動・並び替えで消えないように）
   const pendingRef = useRef<Record<string, Record<string, string>>>(draft ? { [draft.ids[draft.idx] ?? '']: draft.currentAnswers } : {});
   const hintRef = useRef<Record<string, { level: number; used: boolean }>>({});
+  const gradedIdsRef = useRef<Set<string>>(new Set(Object.keys(draft?.gradedAnswers ?? {})));
   const q = questions[idx];
   const graded = q ? gradedMap[q.id] : undefined;
 
@@ -669,6 +670,8 @@ function PracticeSession({ ids, mode, resume, data, update, go }: { ids: string[
   };
 
   const submit = () => {
+    if (gradedIdsRef.current.has(q.id)) return; // 高速な二重クリックで同一問題を二重記録しない
+    gradedIdsRef.current.add(q.id);
     const g = grade(q, answers);
     const seconds = Math.round((Date.now() - startedRef.current) / 1000);
     draftAnswersRef.current[q.id] = answers;
@@ -773,7 +776,7 @@ function ExamSession({ paper, startedAt, data, update, go }: { paper: ExamPaper;
   const [answersByQid, setAnswersByQid] = useState<Record<string, Record<string, string>>>(saved ?? {});
   const [idx, setIdx] = useState(0);
   const [finished, setFinished] = useState<ReturnType<typeof gradeExam> | null>(null);
-  const [remain, setRemain] = useState(EXAM_MINUTES * 60);
+  const [remain, setRemain] = useState(() => Math.max(0, EXAM_MINUTES * 60 - Math.floor((Date.now() - startedAt) / 1000)));
   const finishedRef = useRef(false);
 
   useEffect(() => {
@@ -1010,6 +1013,7 @@ function SettingsView({ data, update }: { data: UserData; update: (fn: (d: UserD
 }
 function loadUserDataFresh(): UserData {
   try { localStorage.removeItem('boki-userdata-v1'); } catch { /* ignore */ }
+  clearCorruptBackup();
   return loadUserData();
 }
 

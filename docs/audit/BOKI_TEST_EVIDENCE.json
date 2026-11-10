@@ -1,1 +1,101 @@
-{"app":"boki","auditDate":"2026-11-11","baseline":{"buildAssets":["assets/index-CgfyWI9y.js","assets/index-BWOUYxmx.css"],"ghPagesShaRecordedByDirective":"95d09c3457c9b00c6fc24e1d732fc29d537fdca6","mainShaRecordedByDirective":"133fe55a279648e0dbdf162429a99ece07c39f84","note":"ローカルビルドの成果物ハッシュが公開アセットと一致することを確認してから着手した"},"browserAuditPreFix":{"at":"2026-11-11T01:57-02:01+09:00","flows":["初心者導線（教材4段階・用語・辞典）","演習（異常な金額入力・ヒント・ブックマーク・再読み込み復元）","模試（導入文・タイマー・中断と再開表示）","検索（現金：問題30件で打ち切り表示）"],"keyFindings":["未採点入力が再開で消える（BOKI-02を実操作で再現）","「12,000円」が整形され正解扱い（注意書きと矛盾）","模試の過剰表現の文言を確認","教材は図表なしのテキストのみ","検索の総件数が不明"],"url":"https://sylpica.github.io/boki/"},"commands":[{"at":"2026-11-11T01:54+09:00","command":"npm test (変更前)","result":"31 passed"},{"at":"2026-11-11T01:55+09:00","command":"npm run build (変更前)","result":"success, assets index-CgfyWI9y.js / index-BWOUYxmx.css"},{"at":"2026-11-11T02:08+09:00","command":"npm test (修正後)","result":"74 passed (6 files: app 31, exam 9, fields 3, flashcards 12, storage 12, figures 7)"},{"at":"2026-11-11T02:05+09:00","command":"npx tsc -b","result":"no errors"},{"at":"2026-11-11T02:08+09:00","command":"npm run build (修正後)","result":"success"},{"at":"2026-11-11T02:07+09:00","command":"独立プロパティ検証スクリプト (tsx): ランダム模試200回×ランダム解答","result":"違反0件（総点・大問別範囲、全欄正解=満点、誤答あり=満点未満）"},{"at":"2026-11-11T02:00+09:00","command":"コンテンツ独立監査スクリプト (tsx, アプリのテスト不使用)","result":"構造検証の不一致0件、needsCalc=false 271問全件照合で違反0件、抽出66問精査で誤分類0件、範囲外の正答使用0件"}],"counts":{"accounts":83,"derivedFamilies":43,"derivedQuestions":756,"flashcards":151,"glossaryEntries":151,"glossaryUniqueTerms":147,"independentQuestions":274,"lessons":16,"needsCalcFalse":271,"questions":1030},"notExecuted":["実機（iPhone）での表示・操作確認","375px等の画面幅での実測","オフライン再読込の実操作","スクリーンリーダー実機確認","模試フルセッションの通し操作（タイマー満了まで）"]}
+{
+ "app": "boki",
+ "auditDate": "2026-11-11",
+ "baseline": {
+  "buildAssets": [
+   "assets/index-CgfyWI9y.js",
+   "assets/index-BWOUYxmx.css"
+  ],
+  "ghPagesShaRecordedByDirective": "95d09c3457c9b00c6fc24e1d732fc29d537fdca6",
+  "mainShaRecordedByDirective": "133fe55a279648e0dbdf162429a99ece07c39f84",
+  "note": "ローカルビルドの成果物ハッシュが公開アセットと一致することを確認してから着手した"
+ },
+ "browserAuditPreFix": {
+  "at": "2026-11-11T01:57-02:01+09:00",
+  "flows": [
+   "初心者導線（教材4段階・用語・辞典）",
+   "演習（異常な金額入力・ヒント・ブックマーク・再読み込み復元）",
+   "模試（導入文・タイマー・中断と再開表示）",
+   "検索（現金：問題30件で打ち切り表示）"
+  ],
+  "keyFindings": [
+   "未採点入力が再開で消える（BOKI-02を実操作で再現）",
+   "「12,000円」が整形され正解扱い（注意書きと矛盾）",
+   "模試の過剰表現の文言を確認",
+   "教材は図表なしのテキストのみ",
+   "検索の総件数が不明"
+  ],
+  "url": "https://sylpica.github.io/boki/"
+ },
+ "commands": [
+  {
+   "at": "2026-11-11T01:54+09:00",
+   "command": "npm test (変更前)",
+   "result": "31 passed"
+  },
+  {
+   "at": "2026-11-11T01:55+09:00",
+   "command": "npm run build (変更前)",
+   "result": "success, assets index-CgfyWI9y.js / index-BWOUYxmx.css"
+  },
+  {
+   "at": "2026-11-11T02:08+09:00",
+   "command": "npm test (修正後)",
+   "result": "74 passed (6 files: app 31, exam 9, fields 3, flashcards 12, storage 12, figures 7)"
+  },
+  {
+   "at": "2026-11-11T02:05+09:00",
+   "command": "npx tsc -b",
+   "result": "no errors"
+  },
+  {
+   "at": "2026-11-11T02:08+09:00",
+   "command": "npm run build (修正後)",
+   "result": "success"
+  },
+  {
+   "at": "2026-11-11T02:07+09:00",
+   "command": "独立プロパティ検証スクリプト (tsx): ランダム模試200回×ランダム解答",
+   "result": "違反0件（総点・大問別範囲、全欄正解=満点、誤答あり=満点未満）"
+  },
+  {
+   "at": "2026-11-11T02:00+09:00",
+   "command": "コンテンツ独立監査スクリプト (tsx, アプリのテスト不使用)",
+   "result": "構造検証の不一致0件、needsCalc=false 271問全件照合で違反0件、抽出66問精査で誤分類0件、範囲外の正答使用0件"
+  },
+  {
+   "at": "2026-11-11T08:12+09:00",
+   "command": "npm test (収束ループ修正後)",
+   "result": "77 passed (6 files)"
+  },
+  {
+   "at": "2026-11-11T08:08-08:13+09:00",
+   "command": "公開サイト実操作確認（ブラウザ）",
+   "result": "保留6項目すべて確認（単語帳裏面開始・演習入力保持・金額契約・検索総件数・模試導入文・教材図表）"
+  },
+  {
+   "at": "2026-11-11T08:11+09:00",
+   "command": "収束ループ第2周の独立再監査（新規15問の解き直し＋修正箇所のプローブ26件）",
+   "result": "不一致0件、P0〜P2なし"
+  }
+ ],
+ "counts": {
+  "accounts": 83,
+  "derivedFamilies": 43,
+  "derivedQuestions": 756,
+  "flashcards": 151,
+  "glossaryEntries": 151,
+  "glossaryUniqueTerms": 147,
+  "independentQuestions": 289,
+  "lessons": 16,
+  "needsCalcFalse": 279,
+  "questions": 1045
+ },
+ "notExecuted": [
+  "実機（iPhone）での表示・操作確認",
+  "375px等の画面幅での実測",
+  "オフライン再読込の実操作",
+  "スクリーンリーダー実機確認",
+  "模試フルセッションの通し操作（タイマー満了まで）"
+ ]
+}

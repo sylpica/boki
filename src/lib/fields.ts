@@ -54,7 +54,8 @@ export function duplicateInvalidatedKeys(fields: AnswerField[], answers: Record<
   const seenBySide = new Map<string, string[]>();
   for (const f of fields) {
     if (f.kind !== 'account') continue;
-    const side = f.key.startsWith('d') ? 'debit' : 'credit';
+    // 側の判定は生成キーの規則（d数字=借方、c数字=貸方）を優先し、それ以外は欄のラベルで補う
+    const side = /^d\d/.test(f.key) ? 'debit' : /^c\d/.test(f.key) ? 'credit' : f.label.includes('借方') ? 'debit' : 'credit';
     const v = (answers[f.key] ?? '').trim();
     if (!v) continue;
     const k = `${side}:${v}`;

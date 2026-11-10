@@ -24,7 +24,7 @@ describe('教材図表の数値検証', () => {
 describe('出題プールの共通処理', () => {
   it('applyNoCalc は計算不要の問題だけを残す（全入口共通の適用点）', () => {
     const pool = applyNoCalc(ALL_QUESTIONS, true);
-    expect(pool.length).toBe(271);
+    expect(pool.length).toBe(279);
     expect(pool.every((q) => !q.needsCalc)).toBe(true);
     expect(applyNoCalc(ALL_QUESTIONS, false).length).toBe(ALL_QUESTIONS.length);
   });

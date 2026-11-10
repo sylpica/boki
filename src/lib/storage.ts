@@ -93,7 +93,7 @@ function sanitizePracticeDraft(v: unknown): PracticeDraft | null {
   return {
     ids,
     mode: v.mode === 'review' ? 'review' : 'practice',
-    idx: Math.max(0, Math.floor(num(v.idx))),
+    idx: Math.min(ids.length - 1, Math.max(0, Math.floor(num(v.idx)))),
     gradedAnswers,
     currentAnswers: strRec(v.currentAnswers),
     usedHints,
@@ -116,6 +116,11 @@ function sanitizeDraft(v: unknown): UserData['draft'] {
     if (!isObj(it) || !isObj(it.question) || typeof it.question.id !== 'string') return null;
     if (!Array.isArray(it.fields) || typeof it.sectionPoints !== 'number') return null;
     if (it.section !== 'q1' && it.section !== 'q2' && it.section !== 'q3') return null;
+    // 解答欄の要素まで検証する（中身が壊れた欄がある下書きは再開時に描画例外になるため捨てる）
+    for (const f of it.fields) {
+      if (!isObj(f) || typeof f.key !== 'string' || typeof f.label !== 'string') return null;
+      if (f.kind !== 'account' && f.kind !== 'amount' && f.kind !== 'select') return null;
+    }
   }
   if (typeof p.startedAt !== 'number' || !Number.isFinite(p.startedAt)) return null;
   const answers: Record<string, Record<string, string>> = {};
@@ -215,6 +220,10 @@ export function loadUserData(): UserData {
 export function corruptBackup(): string | null {
   try { return localStorage.getItem(BACKUP_KEY); } catch { return null; }
 }
+export function clearCorruptBackup(): void {
+  try { localStorage.removeItem(BACKUP_KEY); } catch { /* noop */ }
+  recoveredFromCorrupt = false;
+}
 
 export function saveUserData(data: UserData): boolean {
   try {
@@ -239,5 +248,9 @@ export function parseImportedJson(text: string): { ok: true; data: UserData } | 
   if (!isObj(inner) || !Array.isArray(inner.attempts) || !Array.isArray(inner.exams)) {
     return { ok: false, error: 'bokiの学習データの形式ではありません。' };
   }
+  // 他アプリのJSONとの取り違え防止：書き出しマーカー、またはこのアプリ固有の構造があること
+  const looksLikeBoki = (isObj(parsed) && (parsed as Record<string, unknown>).app === 'boki')
+    || (Array.isArray(inner.bookmarks) && isObj(inner.settings));
+  if (!looksLikeBoki) return { ok: false, error: 'bokiの書き出しファイルではないようです。' };
   return { ok: true, data: migrate(inner) };
 }

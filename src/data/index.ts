@@ -3,6 +3,7 @@ import { QUESTIONS_A } from './questions-a';
 import { QUESTIONS_B } from './questions-b';
 import { QUESTIONS_C } from './questions-c';
 import { QUESTIONS_D } from './questions-d';
+import { QUESTIONS_E } from './questions-e';
 import { GENERATED_1 } from './generated1';
 import { GENERATED_2 } from './generated2';
 import { GENERATED_3 } from './generated3';
@@ -11,7 +12,7 @@ import { LESSONS } from './lessons';
 import { GLOSSARY } from './glossary';
 
 const RAW_QUESTIONS: Question[] = [
-  ...QUESTIONS_A, ...QUESTIONS_B, ...QUESTIONS_C, ...QUESTIONS_D, ...GENERATED_1, ...GENERATED_2, ...GENERATED_3, ...GENERATED_4,
+  ...QUESTIONS_A, ...QUESTIONS_B, ...QUESTIONS_C, ...QUESTIONS_D, ...QUESTIONS_E, ...GENERATED_1, ...GENERATED_2, ...GENERATED_3, ...GENERATED_4,
 ];
 // 重複問題の除去（指示書6.3）: 問題文が完全一致するものは先勝ちで1件だけ残す
 export const ALL_QUESTIONS: Question[] = (() => {

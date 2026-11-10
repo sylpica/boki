@@ -102,4 +102,21 @@ describe('書き出し・取り込み', () => {
     expect(parseImportedJson('{"foo":1}').ok).toBe(false);
     expect(parseImportedJson('not json').ok).toBe(false);
   });
+  it('attempts/examsだけを持つ他形式のJSONは取り込まない', () => {
+    expect(parseImportedJson('{"attempts":[],"exams":[]}').ok).toBe(false);
+  });
+  it('模試下書きの解答欄の中身が壊れていれば下書きだけを捨てる', () => {
+    const d = defaultUserData();
+    const badField = { kind: 'exam', savedAt: 1, payload: { startedAt: 1, answers: {}, paper: { kind: 'random', setLabel: 'x', items: [{ question: { id: 'A001' }, fields: [null], sectionPoints: 3, section: 'q1' }] } } };
+    expect(migrate({ ...d, draft: badField }).draft).toBeNull();
+    const keyOnly = { kind: 'exam', savedAt: 1, payload: { startedAt: 1, answers: {}, paper: { kind: 'random', setLabel: 'x', items: [{ question: { id: 'A001' }, fields: [{ key: 'd0-a' }], sectionPoints: 3, section: 'q1' }] } } };
+    expect(migrate({ ...d, draft: keyOnly }).draft).toBeNull();
+    const good = { kind: 'exam', savedAt: 1, payload: { startedAt: 1, answers: {}, paper: { kind: 'random', setLabel: 'x', items: [{ question: { id: 'A001' }, fields: [{ key: 'd0-a', label: '借方科目', kind: 'account' }], sectionPoints: 3, section: 'q1' }] } } };
+    expect(migrate({ ...d, draft: good }).draft).not.toBeNull();
+  });
+  it('演習下書きの idx は問題数の範囲内に収める', () => {
+    const d = defaultUserData();
+    const m = migrate({ ...d, practiceDraft: { ids: ['A001', 'A002', 'A003'], mode: 'practice', idx: 999, gradedAnswers: {}, currentAnswers: {}, usedHints: {}, savedAt: 1 } });
+    expect(m.practiceDraft?.idx).toBe(2);
+  });
 });

@@ -24,9 +24,10 @@ export function TAccountFigure() {
           <tr><th colSpan={2}>借方（左）</th><th colSpan={2}>貸方（右）</th></tr>
         </thead>
         <tbody>
-          {T_ACCOUNT_EXAMPLE.debits.map((d, i) => (
-            <tr key={d.label}>
-              <td>{d.label}</td><td className="num">￥{d.amount.toLocaleString('ja-JP')}</td>
+          {Array.from({ length: Math.max(T_ACCOUNT_EXAMPLE.debits.length, T_ACCOUNT_EXAMPLE.credits.length) }, (_, i) => (
+            <tr key={i}>
+              <td>{T_ACCOUNT_EXAMPLE.debits[i]?.label ?? ''}</td>
+              <td className="num">{T_ACCOUNT_EXAMPLE.debits[i] ? `￥${T_ACCOUNT_EXAMPLE.debits[i]!.amount.toLocaleString('ja-JP')}` : ''}</td>
               <td>{T_ACCOUNT_EXAMPLE.credits[i]?.label ?? ''}</td>
               <td className="num">{T_ACCOUNT_EXAMPLE.credits[i] ? `￥${T_ACCOUNT_EXAMPLE.credits[i]!.amount.toLocaleString('ja-JP')}` : ''}</td>
             </tr>
@@ -119,13 +120,12 @@ export function BSFigure() {
           </tbody>
         </table>
         <table className="fig-table" aria-label="貸借対照表の負債・純資産の部">
-          <thead><tr><th colSpan={2}>負債</th></tr></thead>
+          <thead><tr><th colSpan={2}>負債・純資産</th></tr></thead>
           <tbody>
+            <tr className="fig-section"><th colSpan={2}>負債</th></tr>
             {BS_EXAMPLE.liabilities.map((x) => <tr key={x.label}><td>{x.label}</td><td className="num">￥{x.amount.toLocaleString('ja-JP')}</td></tr>)}
             <tr className="fig-total"><td>負債合計</td><td className="num">￥{l.toLocaleString('ja-JP')}</td></tr>
-          </tbody>
-          <thead><tr><th colSpan={2}>純資産</th></tr></thead>
-          <tbody>
+            <tr className="fig-section"><th colSpan={2}>純資産</th></tr>
             {BS_EXAMPLE.equity.map((x) => <tr key={x.label}><td>{x.label}</td><td className="num">￥{x.amount.toLocaleString('ja-JP')}</td></tr>)}
             <tr className="fig-total"><td>純資産合計</td><td className="num">￥{e.toLocaleString('ja-JP')}</td></tr>
             <tr className="fig-total"><td>負債・純資産合計</td><td className="num">￥{(l + e).toLocaleString('ja-JP')}</td></tr>

@@ -7,7 +7,6 @@ import { JournalTable } from './App';
 type StartSide = 'front' | 'back';
 type Source = 'all' | 'bookmarked' | 'due' | 'unseen';
 
-const EVAL_LABEL: Record<CardEval, string> = { known: '覚えた', unsure: '不安', unknown: '分からない' };
 
 /**
  * 単語帳（フラッシュカード）。開始時に表面／裏面を同じ重みで選べ、
@@ -30,6 +29,7 @@ export default function CardsView({ data, update, goLesson, goHome }: {
   const [faceFlipped, setFaceFlipped] = useState(false);
   const [evals, setEvals] = useState<Record<CardEval, number>>({ known: 0, unsure: 0, unknown: 0 });
   const [finished, setFinished] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const categories = ['all', '資産', '負債', '純資産', '収益', '費用', '用語'];
   const now = Date.now();
@@ -43,19 +43,21 @@ export default function CardsView({ data, update, goLesson, goHome }: {
     shuffle: false,
   }, now).filter((id) => (src !== 'unseen' || !data.cardStats[id] || data.cardStats[id]!.seen === 0)).length;
 
-  const start = (startSide: StartSide, idsOverride?: string[]) => {
+  const start = (startSide: StartSide, idsOverride?: string[]): boolean => {
     const ids = idsOverride ?? buildDeck(cards, data.cardBookmarks, data.cardStats, {
       category: category === '用語' ? '用語' : category,
       onlyBookmarked: source === 'bookmarked',
       onlyDue: source === 'due',
       shuffle: shuffleOn,
     }, now).filter((id) => (source !== 'unseen' || !data.cardStats[id] || data.cardStats[id]!.seen === 0));
-    if (ids.length === 0) return;
+    if (ids.length === 0) return false;
+    setNotice('');
     setEvals({ known: 0, unsure: 0, unknown: 0 });
     setFaceFlipped(false);
     setFinished(false);
     setSession({ ids, idx: 0, startSide, shuffle: shuffleOn });
     update((d) => ({ ...d, cardSession: { ids, idx: 0, startSide, shuffle: shuffleOn, savedAt: Date.now() } }));
+    return true;
   };
 
   const resume = () => {
@@ -74,7 +76,7 @@ export default function CardsView({ data, update, goLesson, goHome }: {
         <section className="panel">
           <p className="muted">辞典の{ cards.length }枚のカードで、科目と用語を覚えます。問題演習とは別の記憶モードです。</p>
           <div className="card-summary">
-            <span>復習対象 {dueCount} 枚</span>
+            <span>未学習・復習対象 {dueCount} 枚</span>
             <span>未学習 {unseenCount} 枚</span>
             <span>ブックマーク {data.cardBookmarks.length} 枚</span>
           </div>
@@ -84,12 +86,13 @@ export default function CardsView({ data, update, goLesson, goHome }: {
             </select>
             <select aria-label="出題範囲" value={source} onChange={(e) => setSource(e.target.value as Source)}>
               <option value="all">すべて</option>
-              <option value="due">復習対象のみ</option>
+              <option value="due">未学習・復習対象のみ</option>
               <option value="unseen">未学習のみ</option>
               <option value="bookmarked">ブックマークのみ</option>
             </select>
             <label><input type="checkbox" checked={shuffleOn} onChange={(e) => setShuffleOn(e.target.checked)} /> シャッフル</label>
           </div>
+          {notice && <p role="status">{notice}</p>}
           <p aria-live="polite">{total === 0 ? '条件に合うカードがありません。条件を変えてください。' : `条件に合うカード ${total} 枚`}</p>
           <p className="muted">開始する面を選んでください。どちらから始めても、1枚目の表示はその面になります。</p>
           <div className="card-start-buttons">
@@ -152,9 +155,9 @@ export default function CardsView({ data, update, goLesson, goHome }: {
       <div>
         <h1>単語帳の結果</h1>
         <section className="panel">
-          <p>{session.ids.length} 枚を終えました。覚えた {evals.known} 枚、不安 {evals.unsure} 枚、分からない {evals.unknown} 枚（{totalEval} 枚評価）。</p>
+          <p>{session.ids.length} 枚を終えました。このセッションで評価した {totalEval} 枚の内訳：覚えた {evals.known} 枚、不安 {evals.unsure} 枚、分からない {evals.unknown} 枚。</p>
           <p className="muted">「分からない」は今日中に再出題の対象に、「不安」は2日後、「覚えた」は7日後に復習予定として記録しました。カードの評価だけで模試の点数や合格を予測しません。</p>
-          <button className="primary" onClick={() => start(session.startSide)}>同じ条件でもう一度</button>{' '}
+          <button className="primary" onClick={() => { if (!start(session.startSide)) { setSession(null); setFinished(false); setNotice('条件に合うカードがなくなりました。条件を変えてください。'); } }}>同じ条件でもう一度</button>{' '}
           <button onClick={() => { setSession(null); }}>条件を変える</button>{' '}
           <button onClick={goHome}>ホームへ</button>
         </section>
