@@ -124,3 +124,7 @@ textarea { width: 100%; }
 @media (min-width: 900px) {
   .fields { grid-template-columns: 1fr 1fr 1fr; }
 }
+
+.lesson-illustration { margin: 0.75rem 0; }
+.lesson-illustration img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.lesson-illustration figcaption { margin-top: 0.35rem; font-size: 0.85rem; }

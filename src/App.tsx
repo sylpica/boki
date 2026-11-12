@@ -9,6 +9,7 @@ import { reviewQueue, topicStats } from './lib/analytics';
 import { buildCards, isDue } from './lib/flashcards';
 import CardsView from './CardsView';
 import { LessonFigure } from './Figures';
+import { ILLUSTRATIONS } from './data/illustrations';
 
 type View =
   | { name: 'home' }
@@ -242,6 +243,33 @@ function LessonsView({ data, go }: { data: UserData; go: (v: View) => void }) {
   );
 }
 
+/** 文末の「。」を各文の末尾に残したまま文単位に分割する */
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=。)/).filter((s) => s.length > 0);
+}
+
+/** 概要の途中に差し込む概念イラスト。画像は Base64 テキストとして同梱し、開いたレッスンの分だけ読み込む */
+function LessonIllustration({ lessonId }: { lessonId: string }) {
+  const meta = ILLUSTRATIONS[lessonId];
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setSrc(null);
+    fetch(`${import.meta.env.BASE_URL}img64/${lessonId}.b64`)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error('load failed'))))
+      .then((t) => { if (alive) setSrc(`data:image/webp;base64,${t.trim()}`); })
+      .catch(() => { /* 読み込めない場合は図なしで本文のみ表示する */ });
+    return () => { alive = false; };
+  }, [lessonId]);
+  if (!meta || !src) return null;
+  return (
+    <figure className="lesson-illustration">
+      <img src={src} alt={meta.alt} width={1152} height={648} />
+      <figcaption className="muted">{meta.caption}</figcaption>
+    </figure>
+  );
+}
+
 function LessonView({ id, data, update, go }: { id: string; data: UserData; update: (fn: (d: UserData) => UserData) => void; go: (v: View) => void }) {
   const lesson: Lesson | undefined = LESSON_MAP.get(id);
   const savedStage = Math.min(3, Math.max(0, Number(data.lessonStages[id] ?? 0) || 0));
@@ -285,7 +313,15 @@ function LessonView({ id, data, update, go }: { id: string; data: UserData; upda
         ))}
       </div>
       <section className="panel" role="tabpanel" id="stage-panel" aria-labelledby={`stage-tab-${stage}`}>
-        <p className="prewrap">{stageTexts[stage]}</p>
+        {stage === 0 && ILLUSTRATIONS[lesson.id] ? (
+          <>
+            <p className="prewrap">{splitSentences(stageTexts[0]).slice(0, ILLUSTRATIONS[lesson.id].after).join('')}</p>
+            <LessonIllustration lessonId={lesson.id} />
+            <p className="prewrap">{splitSentences(stageTexts[0]).slice(ILLUSTRATIONS[lesson.id].after).join('')}</p>
+          </>
+        ) : (
+          <p className="prewrap">{stageTexts[stage]}</p>
+        )}
         {stage === 0 && <LessonFigure lessonId={lesson.id} />}
         {stage === 1 && lesson.exampleJournal && (
           <div>
