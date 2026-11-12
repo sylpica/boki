@@ -83,7 +83,7 @@ textarea { width: 100%; }
 .gloss-item summary { cursor: pointer; font-weight: 700; padding: 0.4rem 0; }
 .footer { max-width: 62rem; margin: 0 auto; padding: 0.8rem 0.9rem calc(1.2rem + env(safe-area-inset-bottom)); color: var(--muted); font-size: 0.8rem; }
 /* 単語帳 */
-.flashcard { border: 2px solid var(--primary); border-radius: 0.9rem; padding: 1rem; min-height: 11rem; cursor: pointer; background: var(--chip); }
+.flashcard { border: 2px solid var(--primary); border-radius: 0.9rem; padding: 1rem; min-height: 11rem; cursor: pointer; background: var(--chip); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .flashcard:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .card-side-label { color: var(--muted); font-size: 0.8rem; }
 .card-term { font-size: 1.7rem; display: block; margin: 0.8rem 0 0.3rem; }

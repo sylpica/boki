@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { UserData } from './types';
 import { GLOSSARY } from './data';
-import { buildCards, buildDeck, isDue, recordCardEval, reshuffleRemaining, type CardEval } from './lib/flashcards';
+import { buildCards, buildDeck, isDue, recordCardEval, reshuffleRemaining, swipeNav, type CardEval } from './lib/flashcards';
 import { JournalTable } from './App';
 
 type StartSide = 'front' | 'back';
@@ -30,6 +30,8 @@ export default function CardsView({ data, update, goLesson, goHome }: {
   const [evals, setEvals] = useState<Record<CardEval, number>>({ known: 0, unsure: 0, unknown: 0 });
   const [finished, setFinished] = useState(false);
   const [notice, setNotice] = useState('');
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
 
   const categories = ['all', '資産', '負債', '純資産', '収益', '費用', '用語'];
   const now = Date.now();
@@ -134,6 +136,27 @@ export default function CardsView({ data, update, goLesson, goHome }: {
     moveTo(session.idx + 1);
   };
 
+  // スワイプ（FP・AI総合マスターと同方式）：左＝次へ／右＝前へ。
+  // moveTo だけを使うため、スワイプは未回答扱いで評価・復習記録を書かず、既存の評価状態も上書きしない。行き先・状態のラベルは表示しない。
+  const onCardPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+  };
+  const onCardPointerUp = (e: React.PointerEvent) => {
+    const start = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (!start || !e.isPrimary) return;
+    const dir = swipeNav(e.clientX - start.x, e.clientY - start.y);
+    if (!dir) return;
+    suppressClickRef.current = true; // スワイプ直後に発生するクリックでカードがめくれてしまわないようにする
+    if (dir === 'next' && session.idx + 1 < session.ids.length) moveTo(session.idx + 1);
+    if (dir === 'prev' && session.idx > 0) moveTo(session.idx - 1);
+  };
+  const onCardClick = () => {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+    setFaceFlipped((f) => !f);
+  };
+
   const reshuffle = () => {
     const ids = reshuffleRemaining(session.ids, session.idx);
     const next = { ...session, ids };
@@ -176,8 +199,11 @@ export default function CardsView({ data, update, goLesson, goHome }: {
           className="flashcard"
           role="button"
           tabIndex={0}
-          aria-label={`カードをめくる（現在は${shownSide === 'front' ? '表面' : '裏面'}）`}
-          onClick={() => setFaceFlipped((f) => !f)}
+          aria-label={`カードをめくる（現在は${shownSide === 'front' ? '表面' : '裏面'}）。左右にスワイプすると前後のカードへ移動します`}
+          onClick={onCardClick}
+          onPointerDown={onCardPointerDown}
+          onPointerUp={onCardPointerUp}
+          onPointerCancel={() => { pointerStartRef.current = null; }}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFaceFlipped((f) => !f); } }}
         >
           <span className="card-side-label">{shownSide === 'front' ? '表面' : '裏面'}（タップでめくる）</span>
@@ -214,7 +240,7 @@ export default function CardsView({ data, update, goLesson, goHome }: {
           <button disabled={session.idx === 0} onClick={() => moveTo(session.idx - 1)}>前へ</button>
           <button className="primary" disabled={session.idx + 1 >= session.ids.length} onClick={() => moveTo(session.idx + 1)}>次へ</button>
         </div>
-        <p className="muted">並び替えは、表示中のカードをその場に残し、それ以降のカードだけを並べ替えます。</p>
+        <p className="muted">カードは左右スワイプでも移動できます（スワイプでは評価は記録されません）。並び替えは、表示中のカードをその場に残し、それ以降のカードだけを並べ替えます。</p>
       </section>
     </div>
   );

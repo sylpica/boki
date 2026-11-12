@@ -97,6 +97,17 @@ export function buildDeck(cards: FlashCard[], bookmarks: string[], stats: Record
 }
 
 /**
+ * スワイプの方向判定（FP・AI総合マスターと同方式）。
+ * 開始位置には依存せず移動量だけで決めるため、カードの左寄り・右寄りを触っても同じ感度で判定できる。
+ * 水平移動がしきい値以上で、かつ縦移動の1.5倍を超えるときだけカード移動とみなす（縦スクロールと誤認しない）。
+ * 戻り値: 'next'（左スワイプ＝次のカード）/ 'prev'（右スワイプ＝前のカード）/ null（スワイプではない）
+ */
+export function swipeNav(dx: number, dy: number, threshold = 40): 'next' | 'prev' | null {
+  if (Math.abs(dx) < threshold) return null;
+  if (Math.abs(dx) <= Math.abs(dy) * 1.5) return null;
+  return dx < 0 ? 'next' : 'prev';
+}
+/**
  * 再シャッフル：現在表示中のカードはその位置に残し、それ以降のカードだけを並べ替える
  * （学習中の現在カードや採点済みの流れを不意に飛ばさないための継続ルール）。
  */

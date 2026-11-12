@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GLOSSARY } from '../data';
-import { buildCards, buildDeck, isDue, recordCardEval, reshuffleRemaining, CARD_INTERVAL_MS } from './flashcards';
+import { buildCards, buildDeck, isDue, recordCardEval, reshuffleRemaining, swipeNav, CARD_INTERVAL_MS } from './flashcards';
 
 const cards = buildCards(GLOSSARY);
 
@@ -86,5 +86,24 @@ describe('recordCardEval と isDue', () => {
   });
   it('未学習は常に復習対象', () => {
     expect(isDue(undefined, Date.now())).toBe(true);
+  });
+});
+
+describe('スワイプ判定（swipeNav）', () => {
+  it('左スワイプは next、右スワイプは prev', () => {
+    expect(swipeNav(-60, 0)).toBe('next');
+    expect(swipeNav(60, 0)).toBe('prev');
+    expect(swipeNav(-200, 10)).toBe('next');
+  });
+  it('しきい値未満の移動はスワイプとみなさない', () => {
+    expect(swipeNav(-39, 0)).toBeNull();
+    expect(swipeNav(0, 0)).toBeNull();
+    expect(swipeNav(-40, 0)).toBe('next');
+  });
+  it('縦方向が大きい移動はスクロールとして扱い、カードを動かさない', () => {
+    expect(swipeNav(0, 120)).toBeNull();
+    expect(swipeNav(-60, 50)).toBeNull();
+    expect(swipeNav(-80, 50)).toBe('next');
+    expect(swipeNav(90, -100)).toBeNull();
   });
 });
