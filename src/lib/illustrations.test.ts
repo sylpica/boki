@@ -40,3 +40,21 @@ describe('レッスン概念イラストのメタデータと同梱ファイル'
     }
   });
 });
+
+describe('要点まとめPDFの同梱ファイル', () => {
+  const PDF_FILES = import.meta.glob('../../public/pdf64/*.b64', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+  it('boki-summary.b64 が実在し、PDFとして復元できる', () => {
+    const content = PDF_FILES['../../public/pdf64/boki-summary.b64'];
+    expect(content).toBeTruthy();
+    const b64 = content.replace(/\s+/g, '');
+    expect(atob(b64.slice(0, 8)).slice(0, 5)).toBe('%PDF-');
+    // 末尾に EOF マーカーがあること
+    const tail = atob(b64.slice(-32));
+    expect(tail).toContain('%%EOF');
+    // 17ページ分の内容を含む容量（2MB前後）であること
+    const bytes = Math.floor((b64.length * 3) / 4);
+    expect(bytes).toBeGreaterThan(2_000_000);
+    expect(bytes).toBeLessThan(2_600_000);
+  });
+});

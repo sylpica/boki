@@ -219,11 +219,25 @@ function NextSuggestion({ data, go }: { data: UserData; go: (v: View) => void })
   );
 }
 
+/** 要点まとめPDFは配信経路の制約で Base64 テキストとして同梱し、開くときに復元して表示する */
+const openSummaryPdf = async () => {
+  const w = window.open('', '_blank'); // ポップアップブロック回避のため先に空タブを開く
+  try {
+    const text = await (await fetch(`${import.meta.env.BASE_URL}pdf64/boki-summary.b64`)).text();
+    const bin = atob(text.replace(/\s+/g, ''));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    if (w) w.location.href = url; else window.location.href = url;
+  } catch { if (w) w.close(); }
+};
+
 function LessonsView({ data, go }: { data: UserData; go: (v: View) => void }) {
   const chapters = [...new Set(LESSONS.map((l) => l.chapter))];
   return (
     <div>
       <h1>教材</h1>
+      <p><button onClick={() => void openSummaryPdf()}>要点まとめPDFを開く</button></p>
       {chapters.map((ch) => (
         <section key={ch} className="panel">
           <h2>{ch}</h2>
