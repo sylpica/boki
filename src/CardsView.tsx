@@ -141,6 +141,9 @@ export default function CardsView({ data, update, goLesson, goHome }: {
   const onCardPointerDown = (e: React.PointerEvent) => {
     if (!e.isPrimary) return;
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    // ポインタをカードに捕捉し、カードの外で離した場合でも pointerup を受け取れるようにする
+    // （左寄りから始めて短い移動でカード外に出るスワイプを取りこぼさないため）
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 捕捉できない環境では従来どおり */ }
   };
   const onCardPointerUp = (e: React.PointerEvent) => {
     const start = pointerStartRef.current;
